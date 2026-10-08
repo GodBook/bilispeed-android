@@ -2,11 +2,15 @@ param(
     [switch]$RunTests,
     [switch]$RunLiveCheck,
     [switch]$RunUpdateCheck,
+    [switch]$OriginalLayoutProbe,
     [ValidatePattern('^[A-Za-z0-9_.$,#]*$')][string]$TestFilter = '',
     [string]$AndroidSdk = $env:ANDROID_HOME,
     [string]$DeviceSerial = $env:ANDROID_SERIAL
 )
 $ErrorActionPreference = 'Stop'
+if ($OriginalLayoutProbe -and $TestFilter -ne 'app.bilispeed.browser.PlaybackInstrumentationTest#everyPresetChangesRealPlaybackSpeedThroughButtons') {
+    throw 'OriginalLayoutProbe requires the isolated everyPresetChangesRealPlaybackSpeedThroughButtons test filter.'
+}
 if ($TestFilter) { $RunTests = $true }
 if ($RunLiveCheck) { $RunTests = $true }
 if ($RunUpdateCheck) { $RunTests = $true }
@@ -98,11 +102,12 @@ try {
                 & $adb -s $DeviceSerial shell wm dismiss-keyguard
             }
             $testClasses = if ($TestFilter) { $TestFilter } else {
-                'app.bilispeed.browser.PlaybackInstrumentationTest,app.bilispeed.browser.UpdateInstrumentationTest'
+                'app.bilispeed.browser.PlaybackInstrumentationTest,app.bilispeed.browser.DesktopLayoutInstrumentationTest,app.bilispeed.browser.UpdateInstrumentationTest'
             }
             if ($RunLiveCheck) { $testClasses += ',app.bilispeed.browser.OfficialBilibiliSmokeTest' }
             if ($RunUpdateCheck) { $testClasses += ',app.bilispeed.browser.PublishedUpdateSmokeTest' }
-            & $adb -s $DeviceSerial shell am instrument -w -r -e class $testClasses `
+            $probeOriginalLayout = if ($OriginalLayoutProbe) { 'true' } else { 'false' }
+            & $adb -s $DeviceSerial shell am instrument -w -r -e class $testClasses -e originalLayout $probeOriginalLayout `
                 app.bilispeed.browser.test/androidx.test.runner.AndroidJUnitRunner |
                 Tee-Object -FilePath (Join-Path $outputFolder 'instrumentation-tests.txt') |
                 Tee-Object -Variable instrumentOutput

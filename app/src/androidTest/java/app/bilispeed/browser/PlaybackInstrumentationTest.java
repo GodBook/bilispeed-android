@@ -50,12 +50,13 @@ public class PlaybackInstrumentationTest {
 
     @Before public void launch() throws Exception {
         Context target = instrumentation.getTargetContext();
-        target.getSharedPreferences("playback", Context.MODE_PRIVATE).edit().clear().commit();
+        target.getSharedPreferences("playback", Context.MODE_PRIVATE).edit().clear()
+                .putBoolean("touchLayout", !"true".equals(InstrumentationRegistry.getArguments().getString("originalLayout"))).commit();
         target.getSharedPreferences("updates", Context.MODE_PRIVATE).edit().putBoolean("automatic", false).commit();
         if (cachedMedia == null) createLongFixture();
         media = cachedMedia;
         activity = start();
-        loadFixture("https://m.bilibili.com/__bilispeed_test__/");
+        loadFixture("https://www.bilibili.com/__bilispeed_test__/");
     }
 
     private void createLongFixture() throws Exception {
@@ -340,6 +341,8 @@ public class PlaybackInstrumentationTest {
                     + " focus:" + activity.hasWindowFocus() + " errorOverlay:" + (errorTitle != null && errorTitle.isShown()));
         });
         assertTrue("HTML5 fullscreen was not entered", fullscreen.get());
+        instrumentation.runOnMainSync(() -> assertFalse("Bottom navigation must not cover fullscreen video",
+                findText(activity.getWindow().getDecorView(), "首页").isShown()));
         instrumentation.runOnMainSync(() -> {
             activity.openSpeedPanel();
             assertTrue(activity.speedDialogForTesting().isShowing());
@@ -349,10 +352,13 @@ public class PlaybackInstrumentationTest {
         });
         await("document.getElementById('v').playbackRate === 5", 5000);
         SystemClock.sleep(6500);
+        System.out.println("BILISPEED_FULLSCREEN_PLAYBACK=" + js("JSON.stringify({hidden:document.hidden,focus:document.hasFocus(),state:window.__BiliSpeed.snapshot()})"));
         instrumentation.runOnMainSync(() -> assertTrue("Fullscreen playback must keep the screen awake",
                 (activity.getWindow().getAttributes().flags & android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0));
         instrumentation.runOnMainSync(activity::onBackPressed);
         assertFalse(activity.fullscreenForTesting());
+        instrumentation.runOnMainSync(() -> assertTrue("Bottom navigation must return after fullscreen",
+                findText(activity.getWindow().getDecorView(), "首页").isShown()));
         assertEquals(5, snapshot().getDouble("selected"), 0.001);
         assertFalse((Boolean) js("document.getElementById('v').paused"));
     }
@@ -378,7 +384,7 @@ public class PlaybackInstrumentationTest {
         assertNull("The multi-megabyte data URL history must use the link fallback", state.getBundle("browserState"));
         assertNull("Temporary data URLs must not be stored as a navigation fallback", state.getString("currentUrl"));
         assertEquals(3.5f, state.getFloat("selectedRate"), 0.001f);
-        String url = "https://m.bilibili.com/__bilispeed_test__/";
+        String url = "https://www.bilibili.com/__bilispeed_test__/";
         loadFixture(url, url);
         Bundle httpsState = new Bundle();
         instrumentation.runOnMainSync(() -> instrumentation.callActivityOnSaveInstanceState(activity, httpsState));
@@ -387,10 +393,10 @@ public class PlaybackInstrumentationTest {
     }
 
     @Test public void bulkPageChangesDoNotRepeatWholePagePlayerQueries() throws Exception {
-        loadFixture("https://m.bilibili.com/video/__bilispeed_test__/");
+        loadFixture("https://www.bilibili.com/video/__bilispeed_test__/");
         js("window._playerQueries=0; window._originalQuery=document.querySelector;"
                 + "document.querySelector=function(selector){"
-                + "if(selector==='.video-share .m-video-player')window._playerQueries++;"
+                + "if(selector==='#mirror-vdcon .video-toolbar-container')window._playerQueries++;"
                 + "return window._originalQuery.call(this,selector);};"
                 + "var fragment=document.createDocumentFragment();"
                 + "for(var i=0;i<400;i++){var item=document.createElement('div');item.textContent='Item '+i;fragment.append(item);}"

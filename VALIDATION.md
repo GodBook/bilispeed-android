@@ -1,5 +1,21 @@
 # Android 16 验收记录
 
+## 1.2.0：电脑端网页与触屏操作
+
+- 默认入口和 User-Agent 改为电脑端；旧版手机网页偏好不再影响启动。手机端首页、视频、番剧、搜索、动态和空间链接转到相应电脑端，保留 query 和 fragment。
+- 触屏布局提供两列推荐 / 搜索列表、纵向视频页面、底部导航，以及直接作用于官方 HTML5 视频的暂停、进度、时间和全屏控件。电脑原版布局仍可从菜单切换。
+- 正式签名 APK 的 assembleRelease、lintRelease、JavaScript 与 PowerShell 语法检查通过；lint 为 0 errors / 4 warnings。
+- 最后交付检查为 OK (7 tests)：4 项布局、链接及偏好检查，3 项真实 B 站检查。验证首页、搜索、热门、动态、官方登录表单的手机宽度，以及实际视频的 5x 设置、播放、暂停、拖动进度、继续、全屏和返回。结果为 artifacts/desktop-delivery-check.txt。
+- 32 项本地播放、布局和更新回归中，31 项通过；全屏持续播放的唤醒标记已通过复测。逐档实际播放时间的测量尚未通过：串行回归出现 3x 实测约 1.94x，重启后隔离检查出现 1.25x 实测约 0.39x；电脑原版布局对照也出现 1.5x 实测约 0.43x。原因未确定，不能将倍速属性正确视为所有档位实际计时均已通过。
+- 完整运行中的一次实站 JavaScript 回调超时，在重启后的隔离检查及最后 7 项交付检查中通过。原始记录保存在 artifacts/desktop-regression-and-live-tests.txt、artifacts/desktop-recheck.txt 和 artifacts/desktop-original-rate-probe.txt。
+- 已成功覆盖安装；新旧 APK 的签名证书与 1.1.1 一致，APK Signature Scheme v2 校验通过。APK、update.json 与 SHA256SUMS.txt 相互匹配。
+- 版本：versionName 1.2.0，versionCode 4，targetSdk 36，minSdk 26。APK：artifacts/BiliSpeed-1.2.0-Android16.apk，1766158 字节。
+- SHA-256：C0539F347291D1694C997A7F7801E84F5CA9BFCDABEEB5FA92346DFC3905043B。
+
+测试设备为 Android 16 / API 36 x86_64 模拟器，720 × 1600、density 300。未连接实体手机；登录仅检查官方表单显示，未使用真实账号验证登录、会员、收藏和评论。本版发布渠道为 GitHub Releases 的 v1.2.0。
+
+截图为 artifacts/BiliSpeed-desktop-home.png、BiliSpeed-desktop-video.png、BiliSpeed-desktop-search.png、BiliSpeed-desktop-popular.png、BiliSpeed-desktop-dynamic.png、BiliSpeed-desktop-login.png 和 BiliSpeed-desktop-speed-panel.png。
+
 ## 1.1.1：性能与稳定性
 
 - 正式签名 APK 的 assembleRelease、lintRelease、JavaScript 语法和发布脚本 PowerShell 语法检查通过；lint 为 0 errors / 4 warnings。

@@ -72,7 +72,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
-    static final String HOME = "https://m.bilibili.com/";
+    static final String HOME = "https://www.bilibili.com/";
     private static final int PINK = Color.rgb(232, 85, 127);
     private static final int INK = Color.rgb(40, 40, 48);
     private static final int MUTED = Color.rgb(116, 116, 125);
@@ -92,6 +92,8 @@ public class MainActivity extends Activity {
     private WebView browser;
     private FrameLayout fullscreenHost;
     private LinearLayout floating;
+    private LinearLayout navigation;
+    private final ArrayList<TextView> navigationItems = new ArrayList<>();
     private TextView speedButton;
     private TextView statusText;
     private TextView chosenText;
@@ -106,9 +108,9 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> uploadCallback;
     private ScriptHandler documentScript;
     private String injection;
-    private String mobileUserAgent;
+    private String touchInjection;
     private float selectedRate = 1;
-    private boolean desktop;
+    private boolean touchLayout;
     private boolean foreground;
     private boolean destroyed;
     private boolean failedNavigation;
@@ -126,7 +128,7 @@ public class MainActivity extends Activity {
         @Override public void run() {
             if (destroyed || !foreground) return;
             // Poll as a fallback for WebViews without the scoped message bridge.
-            if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
+            if ((!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) || fullscreenView != null)
                     && isBiliHttps(browser.getUrl())) {
                 browser.evaluateJavascript("window.__BiliSpeed ? JSON.stringify(window.__BiliSpeed.snapshot()) : null", value -> {
                     try {
@@ -142,6 +144,7 @@ public class MainActivity extends Activity {
                     updatePlaybackStatus();
                 });
             }
+            if (fullscreenView != null) configureFrames();
             updatePlaybackStatus();
             handler.postDelayed(this, 1500);
         }
@@ -154,16 +157,11 @@ public class MainActivity extends Activity {
                 ? preferences.getFloat("rate", 1) : 1;
         if (savedInstanceState != null) selectedRate = savedInstanceState.getFloat("selectedRate", selectedRate);
         if (!validRate(selectedRate)) selectedRate = 1;
-        desktop = preferences.getBoolean("desktop", false);
-        try (InputStream input = getAssets().open("speed-controller.js")) {
-            ByteArrayOutputStream output = new ByteArrayOutputStream();
-            byte[] buffer = new byte[4096];
-            int read;
-            while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
-            injection = new String(output.toByteArray(), StandardCharsets.UTF_8);
-        } catch (Exception exception) {
-            throw new IllegalStateException("Missing playback controller", exception);
-        }
+        // Old versions saved desktop=false. The site now always uses the desktop
+        // player; the separate preference only controls its touch-friendly layout.
+        touchLayout = preferences.getBoolean("touchLayout", true);
+        injection = readAsset("speed-controller.js");
+        touchInjection = readAsset("desktop-touch.js");
         buildInterface();
         configureBrowser();
         updater = new AppUpdater(this);
@@ -173,14 +171,29 @@ public class MainActivity extends Activity {
         }
         Bundle browserState = savedInstanceState == null ? null : savedInstanceState.getBundle("browserState");
         if (browserState == null) browserState = savedInstanceState;
-        if (browserState == null || browser.restoreState(browserState) == null) {
-            String shared = sharedUrl(getIntent());
+        boolean restored = browserState != null && browser.restoreState(browserState) != null;
+        String shared = sharedUrl(getIntent());
+        if (shared != null || !restored) {
             String previous = savedInstanceState == null ? null : savedInstanceState.getString("currentUrl");
-            String start = shared != null ? shared : isHttps(previous) && previous.length() <= 8192 ? previous
-                    : desktop ? "https://www.bilibili.com/" : HOME;
-            browser.loadUrl(mobileUrl(start));
+            String start = shared != null ? shared : isHttps(previous) && previous.length() <= 8192 ? previous : HOME;
+            browser.loadUrl(desktopUrl(start));
+        } else {
+            String previous = browser.getUrl();
+            if (previous != null && !previous.equals(desktopUrl(previous))) browser.loadUrl(desktopUrl(previous));
         }
         updateFloatingLabel();
+    }
+
+    private String readAsset(String name) {
+        try (InputStream input = getAssets().open(name)) {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+            return new String(output.toByteArray(), StandardCharsets.UTF_8);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Missing browser asset: " + name, exception);
+        }
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -227,6 +240,35 @@ public class MainActivity extends Activity {
         errorPanel.addView(retry, new LinearLayout.LayoutParams(dp(180), dp(48)));
         errorPanel.setVisibility(View.GONE);
         root.addView(errorPanel, new FrameLayout.LayoutParams(-1, -1));
+
+        navigation = new LinearLayout(this);
+        navigation.setGravity(Gravity.CENTER);
+        navigation.setBackgroundColor(Color.WHITE);
+        navigation.setElevation(dp(3));
+        String[] labels = {"首页", "热门", "搜索", "动态", "我的"};
+        for (int index = 0; index < labels.length; index++) {
+            final int item = index;
+            TextView tab = text(labels[index], 15, MUTED);
+            tab.setGravity(Gravity.CENTER);
+            tab.setTypeface(null, Typeface.BOLD);
+            tab.setClickable(true);
+            tab.setFocusable(true);
+            tab.setContentDescription("B站" + labels[index]);
+            tab.setOnClickListener(view -> {
+                if (fullscreenView != null) exitFullscreen();
+                switch (item) {
+                    case 0: browser.loadUrl(HOME); break;
+                    case 1: browser.loadUrl("https://www.bilibili.com/v/popular/all"); break;
+                    case 2: showSearch(); break;
+                    case 3: browser.loadUrl("https://t.bilibili.com/"); break;
+                    case 4: showAccountMenu(); break;
+                }
+            });
+            navigationItems.add(tab);
+            navigation.addView(tab, new LinearLayout.LayoutParams(0, -1, 1));
+        }
+        root.addView(navigation, new FrameLayout.LayoutParams(-1, dp(56), Gravity.BOTTOM));
+        updateBrowserLayout();
 
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setMax(100);
@@ -297,14 +339,13 @@ public class MainActivity extends Activity {
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUseWideViewPort(true);
-        settings.setLoadWithOverviewMode(true);
+        settings.setUseWideViewPort(!touchLayout);
+        settings.setLoadWithOverviewMode(!touchLayout);
         settings.setBuiltInZoomControls(true);
         settings.setDisplayZoomControls(false);
         settings.setSupportMultipleWindows(true);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
         settings.setSafeBrowsingEnabled(true);
-        mobileUserAgent = WebSettings.getDefaultUserAgent(this).replace("; wv", "").replace(" Version/4.0", "");
         applyUserAgent();
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(browser, true);
@@ -347,7 +388,10 @@ public class MainActivity extends Activity {
                 return navigate(request.getUrl().toString(), request.hasGesture());
             }
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                String mapped = desktopUrl(url);
+                if (!mapped.equals(url)) { view.stopLoading(); view.loadUrl(mapped); return; }
                 view.getSettings().setMediaPlaybackRequiresUserGesture(!isBiliHttps(url));
+                updateNavigation(url);
                 failedNavigation = false;
                 errorPanel.setVisibility(View.GONE);
                 frameStates.clear();
@@ -365,7 +409,7 @@ public class MainActivity extends Activity {
             }
             @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
                 if (request.isForMainFrame() && response.getStatusCode() >= 400) {
-                    showPageError("网站返回 " + response.getStatusCode() + "，请稍后重试。\n也可以通过菜单切换电脑版网页。");
+                    showPageError("网站返回 " + response.getStatusCode() + "，请稍后重试。\n可通过菜单重新加载或打开其他视频链接。");
                 }
             }
             @Override public void onReceivedSslError(WebView view, SslErrorHandler sslHandler, SslError error) {
@@ -394,7 +438,7 @@ public class MainActivity extends Activity {
                 popup.setWebViewClient(new WebViewClient() {
                     @Override public boolean shouldOverrideUrlLoading(WebView ignored, WebResourceRequest request) {
                         String url = request.getUrl().toString();
-                        if (!navigate(url, true) && "https".equals(request.getUrl().getScheme())) browser.loadUrl(mobileUrl(url));
+                        if (!navigate(url, true) && "https".equals(request.getUrl().getScheme())) browser.loadUrl(desktopUrl(url));
                         handler.post(close);
                         return true;
                     }
@@ -426,17 +470,17 @@ public class MainActivity extends Activity {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return;
         if (documentScript != null) documentScript.remove();
         documentScript = WebViewCompat.addDocumentStartJavaScript(browser,
-                controllerInitialState() + injection, ORIGINS);
+                controllerInitialState() + touchInjection + "\n" + injection, ORIGINS);
     }
 
     private String controllerInitialState() {
         return "window.__BILI_SPEED_INITIAL__=" + selectedRate + ";window.__BILI_SPEED_SUSPENDED__="
-                + !foreground + ";\n";
+                + !foreground + ";window.__BILI_TOUCH_ENABLED__=" + touchLayout + ";\n";
     }
 
     private void injectIntoPage() {
         if (destroyed || !isBiliHttps(browser.getUrl())) return;
-        browser.evaluateJavascript(controllerInitialState() + injection
+        browser.evaluateJavascript(controllerInitialState() + touchInjection + "\n" + injection
                 + "\nwindow.__BiliSpeed && window.__BiliSpeed.configure(" + configMessage() + ");", null);
     }
 
@@ -659,11 +703,11 @@ public class MainActivity extends Activity {
 
     private void showBrowserMenu() {
         String[] items = {"B站首页", "后退", "刷新", "打开链接", "复制当前链接", "在系统浏览器打开",
-                desktop ? "切换手机网页" : "切换电脑版网页", updater.menuLabel(),
+                touchLayout ? "切换电脑原版布局" : "切换触屏布局", updater.menuLabel(),
                 "启动时检查更新：" + (updater.automaticEnabled() ? "开" : "关"), "项目源码", "关于"};
         new AlertDialog.Builder(this).setTitle("浏览器").setItems(items, (dialog, which) -> {
             switch (which) {
-                case 0: browser.loadUrl(desktop ? "https://www.bilibili.com/" : HOME); break;
+                case 0: browser.loadUrl(HOME); break;
                 case 1: goBack(); break;
                 case 2: browser.reload(); break;
                 case 3: showOpenLink(); break;
@@ -677,16 +721,14 @@ public class MainActivity extends Activity {
                     break;
                 case 5: openExternal(browser.getUrl()); break;
                 case 6:
-                    desktop = !desktop;
-                    preferences.edit().putBoolean("desktop", desktop).apply();
-                    applyUserAgent();
-                    browser.loadUrl(mobileUrl(browser.getUrl() == null ? HOME : browser.getUrl()));
+                    setTouchLayout(!touchLayout);
                     break;
                 case 7: updater.checkManually(); break;
                 case 8: updater.toggleAutomatic(); break;
                 case 9: openExternal("https://github.com/" + BuildConfig.UPDATE_REPOSITORY); break;
                 case 10: new AlertDialog.Builder(this).setTitle("B站倍速浏览器 " + BuildConfig.VERSION_NAME)
-                        .setMessage("打开即进入B站，点击粉色按钮调节倍速，拖动按钮可移动位置。\n\n"
+                        .setMessage("使用B站电脑端网页，默认按手机触屏排版；底部可进入首页、热门、搜索、动态和我的。\n\n"
+                                + "点击粉色按钮调节倍速，拖动按钮可移动位置。\n\n"
                                 + "支持 1.25x、1.5x、2x、2.5x、3x、3.5x、4x、5x，"
                                 + "也可输入 0.25–5x 的自定义速度。\n\n"
                                 + "这是个人第三方浏览器，使用B站官方网页。部分功能仅在官方App内提供。"
@@ -710,7 +752,7 @@ public class MainActivity extends Activity {
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
             String value = resolveUrlInput(input.getText().toString());
             if (value == null) { input.setError("请输入网页链接、分享文本或 BV 号"); return; }
-            browser.loadUrl(mobileUrl(value));
+            browser.loadUrl(desktopUrl(value));
             dialog.dismiss();
         }));
         dialog.show();
@@ -718,18 +760,18 @@ public class MainActivity extends Activity {
 
     private boolean navigate(String url, boolean gesture) {
         if (isHttps(url)) {
-            String mapped = mobileUrl(url);
+            String mapped = desktopUrl(url);
             if (!mapped.equals(url)) { browser.loadUrl(mapped); return true; }
             return false;
         }
         if (url.startsWith("http://")) {
-            browser.loadUrl(mobileUrl("https://" + url.substring(7)));
+            browser.loadUrl(desktopUrl("https://" + url.substring(7)));
             return true;
         }
         String fallback = deepLinkFallback(url);
         if (fallback != null) {
             // Auto app-open prompts should not interrupt a video already playing.
-            if (gesture) browser.loadUrl(mobileUrl(fallback));
+            if (gesture) browser.loadUrl(desktopUrl(fallback));
             return true;
         }
         if (gesture && SystemClock.elapsedRealtime() - lastBlockedMessage > 2500) {
@@ -762,15 +804,26 @@ public class MainActivity extends Activity {
         return null;
     }
 
-    private String mobileUrl(String url) {
+    static String desktopUrl(String url) {
+        if (!isHttps(url)) return url;
         Uri uri = Uri.parse(url);
         String host = uri.getHost();
-        if (host == null || !(host.equalsIgnoreCase("www.bilibili.com") || host.equalsIgnoreCase("m.bilibili.com"))) return url;
+        if (!(host.equalsIgnoreCase("bilibili.com") || host.equalsIgnoreCase("www.bilibili.com")
+                || host.equalsIgnoreCase("m.bilibili.com")) || (uri.getPort() != -1 && uri.getPort() != 443)) return url;
         String path = uri.getPath() == null ? "/" : uri.getPath();
-        if (path.equals("/") || path.isEmpty() || path.startsWith("/video/") || path.startsWith("/bangumi/play/")) {
-            return uri.buildUpon().authority(desktop ? "www.bilibili.com" : "m.bilibili.com").scheme("https").build().toString();
+        Uri.Builder mapped = uri.buildUpon().scheme("https");
+        if (host.equalsIgnoreCase("m.bilibili.com")) {
+            if (path.equals("/search") || path.startsWith("/search/")) {
+                return mapped.authority("search.bilibili.com").path("/all").build().toString();
+            }
+            if (path.equals("/dynamic") || path.startsWith("/dynamic/")) {
+                return mapped.authority("t.bilibili.com").path(path.substring("/dynamic".length())).build().toString();
+            }
+            if (path.matches("/space/[0-9]+/?")) {
+                return mapped.authority("space.bilibili.com").path(path.substring("/space".length())).build().toString();
+            }
         }
-        return url;
+        return mapped.authority("www.bilibili.com").build().toString();
     }
 
     static boolean isBiliHttps(String url) {
@@ -791,9 +844,95 @@ public class MainActivity extends Activity {
     }
 
     private void applyUserAgent() {
-        String ua = mobileUserAgent;
-        if (desktop) ua = ua.replaceFirst("\\([^)]*\\)", "(X11; Linux x86_64)").replace(" Mobile", "");
+        String ua = WebSettings.getDefaultUserAgent(this).replace("; wv", "").replace(" Version/4.0", "")
+                .replaceFirst("\\([^)]*\\)", "(X11; Linux x86_64)").replace(" Mobile", "");
         browser.getSettings().setUserAgentString(ua);
+    }
+
+    void setTouchLayout(boolean enabled) {
+        touchLayout = enabled;
+        preferences.edit().putBoolean("touchLayout", enabled).apply();
+        browser.getSettings().setUseWideViewPort(!enabled);
+        browser.getSettings().setLoadWithOverviewMode(!enabled);
+        updateBrowserLayout();
+        updateDocumentScript();
+        browser.reload();
+    }
+
+    private void updateBrowserLayout() {
+        boolean visible = touchLayout && fullscreenView == null;
+        navigation.setVisibility(visible ? View.VISIBLE : View.GONE);
+        int margin = visible ? dp(56) : 0;
+        FrameLayout.LayoutParams content = (FrameLayout.LayoutParams) browser.getLayoutParams();
+        content.bottomMargin = margin;
+        browser.setLayoutParams(content);
+        FrameLayout.LayoutParams error = (FrameLayout.LayoutParams) errorPanel.getLayoutParams();
+        error.bottomMargin = margin;
+        errorPanel.setLayoutParams(error);
+        root.post(this::positionFloating);
+    }
+
+    private void updateNavigation(String url) {
+        Uri uri = Uri.parse(url == null ? HOME : url);
+        String host = uri.getHost(), path = uri.getPath();
+        int selected = -1;
+        if ("search.bilibili.com".equals(host)) selected = 2;
+        else if ("t.bilibili.com".equals(host)) selected = 3;
+        else if ("account.bilibili.com".equals(host) || "passport.bilibili.com".equals(host)
+                || "space.bilibili.com".equals(host) || ("www.bilibili.com".equals(host) && path != null
+                && (path.startsWith("/account/") || path.startsWith("/watchlater")))) selected = 4;
+        else if ("www.bilibili.com".equals(host) && path != null) {
+            if (path.startsWith("/v/popular")) selected = 1;
+            else if (path.equals("/") || path.isEmpty()) selected = 0;
+        }
+        for (int index = 0; index < navigationItems.size(); index++) {
+            TextView tab = navigationItems.get(index);
+            tab.setSelected(index == selected);
+            tab.setTextColor(index == selected ? PINK : MUTED);
+        }
+    }
+
+    static String searchUrl(String keyword) {
+        return Uri.parse("https://search.bilibili.com/all").buildUpon()
+                .appendQueryParameter("keyword", keyword.trim()).build().toString();
+    }
+
+    private void showSearch() {
+        EditText input = new EditText(this);
+        input.setSingleLine();
+        input.setHint("搜索视频、UP主或番剧");
+        input.setInputType(InputType.TYPE_CLASS_TEXT);
+        input.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
+        LinearLayout holder = new LinearLayout(this);
+        holder.setPadding(dp(20), dp(10), dp(20), 0);
+        holder.addView(input, new LinearLayout.LayoutParams(-1, -2));
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("搜索B站").setView(holder)
+                .setNegativeButton("取消", null).setPositiveButton("搜索", null).create();
+        Runnable search = () -> {
+            String keyword = input.getText().toString().trim();
+            if (keyword.isEmpty()) { input.setError("请输入搜索内容"); return; }
+            browser.loadUrl(searchUrl(keyword));
+            dialog.dismiss();
+        };
+        dialog.setOnShowListener(ignored -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> search.run());
+            input.requestFocus();
+            dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        });
+        input.setOnEditorActionListener((view, action, event) -> {
+            if (action != android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) return false;
+            search.run();
+            return true;
+        });
+        dialog.show();
+    }
+
+    private void showAccountMenu() {
+        String[] items = {"登录 / 个人中心", "观看历史", "稍后再看"};
+        String[] urls = {"https://account.bilibili.com/account/home", "https://www.bilibili.com/account/history",
+                "https://www.bilibili.com/watchlater/#/list"};
+        new AlertDialog.Builder(this).setTitle("我的").setItems(items,
+                (dialog, which) -> browser.loadUrl(urls[which])).show();
     }
 
     private void openExternal(String url) {
@@ -843,6 +982,7 @@ public class MainActivity extends Activity {
         fullscreenHost.addView(view, new FrameLayout.LayoutParams(-1, -1));
         fullscreenHost.setVisibility(View.VISIBLE);
         browser.setVisibility(View.INVISIBLE);
+        updateBrowserLayout();
         setSystemBarsFullscreen(true);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
         root.post(this::positionFloating);
@@ -854,6 +994,7 @@ public class MainActivity extends Activity {
         fullscreenView = null;
         fullscreenHost.setVisibility(View.GONE);
         browser.setVisibility(View.VISIBLE);
+        updateBrowserLayout();
         WebChromeClient.CustomViewCallback callback = fullscreenCallback;
         fullscreenCallback = null;
         if (callback != null) callback.onCustomViewHidden();
@@ -882,7 +1023,8 @@ public class MainActivity extends Activity {
     }
 
     private float maxFloatX() { return Math.max(dp(8), root.getWidth() - root.getPaddingLeft() - root.getPaddingRight() - dp(150)); }
-    private float maxFloatY() { return Math.max(dp(8), root.getHeight() - root.getPaddingTop() - root.getPaddingBottom() - dp(56)); }
+    private float maxFloatY() { return Math.max(dp(8), root.getHeight() - root.getPaddingTop() - root.getPaddingBottom()
+            - dp(56) - (navigation != null && navigation.getVisibility() == View.VISIBLE ? dp(56) : 0)); }
     private String positionPrefix() { return fullscreenView != null ? "fullscreen_" : "normal_"; }
     private void positionFloating() {
         if (floating == null || root.getWidth() == 0) return;
@@ -912,7 +1054,7 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         String shared = sharedUrl(intent);
-        if (shared != null) browser.loadUrl(mobileUrl(shared));
+        if (shared != null) browser.loadUrl(desktopUrl(shared));
     }
     @Override protected void onResume() {
         super.onResume();
