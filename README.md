@@ -75,6 +75,14 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-apk.ps1
 .\scripts\build-apk.ps1 -RunLiveCheck -DeviceSerial emulator-5580
 ```
 
+正式发布后，可用原签名验证真实 GitHub 更新渠道的元数据、APK 下载和签名：
+
+~~~powershell
+.\scripts\build-apk.ps1 -RunUpdateCheck -DeviceSerial emulator-5580
+~~~
+
+此检查依赖本仓库已有正式 Release，并需要设备能够联网访问 GitHub。
+
 主要代码：MainActivity.java 管理浏览器与原生面板，assets/speed-controller.js 负责播放器倍速，AppUpdater.java 管理在线更新。targetSdk 为 36，minSdk 为 26；验收优先使用 Android 16。
 
 ## 发布后续更新
