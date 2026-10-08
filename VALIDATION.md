@@ -16,6 +16,8 @@
 
 截图为 artifacts/BiliSpeed-desktop-home.png、BiliSpeed-desktop-video.png、BiliSpeed-desktop-search.png、BiliSpeed-desktop-popular.png、BiliSpeed-desktop-dynamic.png、BiliSpeed-desktop-login.png 和 BiliSpeed-desktop-speed-panel.png。
 
+发布后已确认 GitHub 最新正式版本为 v1.2.0，三个附件齐全；重新下载 APK、update.json 和 SHA256SUMS.txt，版本、文件大小与 SHA-256 均与本机构建一致。Android 16 上读取正式更新渠道、实际下载发布 APK 并校验包名、版本、哈希和原签名：OK (1 test)，记录为 artifacts/published-update-test-1.2.0.txt。
+
 ## 1.1.1：性能与稳定性
 
 - 正式签名 APK 的 assembleRelease、lintRelease、JavaScript 语法和发布脚本 PowerShell 语法检查通过；lint 为 0 errors / 4 warnings。
