@@ -1,0 +1,58 @@
+plugins {
+    id 'com.android.application'
+}
+
+def releaseProperties = new Properties()
+rootProject.file('version.properties').withInputStream { releaseProperties.load(it) }
+def releaseCode = providers.gradleProperty('bilispeedVersionCode').getOrElse(releaseProperties.versionCode).toInteger()
+def releaseName = providers.gradleProperty('bilispeedVersionName').getOrElse(releaseProperties.versionName)
+
+android {
+    namespace 'app.bilispeed.browser'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'app.bilispeed.browser'
+        minSdk 26
+        targetSdk 36
+        versionCode releaseCode
+        versionName releaseName
+        buildConfigField 'String', 'UPDATE_REPOSITORY', '"' + releaseProperties.repository + '"'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+
+    signingConfigs {
+        localRelease {
+            def keyFile = rootProject.file('.signing/bilispeed-release.jks')
+            def password = System.getenv('BILISPEED_SIGNING_PASSWORD')
+            if (keyFile.exists() && password) {
+                storeFile keyFile
+                storePassword password
+                keyAlias 'bilispeed'
+                keyPassword password
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.localRelease
+            minifyEnabled false
+            debuggable false
+        }
+    }
+    buildFeatures {
+        buildConfig true
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.16.0'
+    implementation 'androidx.webkit:webkit:1.14.0'
+    androidTestImplementation 'androidx.test:runner:1.7.0'
+    androidTestImplementation 'junit:junit:4.13.2'
+}

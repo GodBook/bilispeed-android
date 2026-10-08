@@ -1,0 +1,946 @@
+package app.bilispeed.browser;
+
+import android.annotation.SuppressLint;
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.Dialog;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
+import android.content.res.Configuration;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
+import android.net.http.SslError;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
+import android.text.InputType;
+import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
+import android.webkit.CookieManager;
+import android.webkit.SslErrorHandler;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.ScrollView;
+import android.widget.SeekBar;
+import android.widget.Switch;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.webkit.JavaScriptReplyProxy;
+import androidx.webkit.ScriptHandler;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
+
+import org.json.JSONObject;
+
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class MainActivity extends Activity {
+    static final String HOME = "https://m.bilibili.com/";
+    private static final int PINK = Color.rgb(232, 85, 127);
+    private static final int INK = Color.rgb(40, 40, 48);
+    private static final int MUTED = Color.rgb(116, 116, 125);
+    private static final int FILE_PICKER = 100;
+    private static final float[] PRESETS = {1, 1.25f, 1.5f, 2, 2.5f, 3, 3.5f, 4, 5};
+    private static final Set<String> ORIGINS = new HashSet<>(Arrays.asList(
+            "https://bilibili.com", "https://*.bilibili.com"));
+
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Map<JavaScriptReplyProxy, FrameState> frameStates = new LinkedHashMap<>();
+    private final ArrayList<Button> presetButtons = new ArrayList<>();
+    private SharedPreferences preferences;
+    private AppUpdater updater;
+    private FrameLayout root;
+    private WebView browser;
+    private FrameLayout fullscreenHost;
+    private LinearLayout floating;
+    private TextView speedButton;
+    private TextView statusText;
+    private TextView chosenText;
+    private EditText customInput;
+    private SeekBar speedSlider;
+    private ProgressBar progress;
+    private LinearLayout errorPanel;
+    private TextView errorText;
+    private Dialog speedDialog;
+    private View fullscreenView;
+    private WebChromeClient.CustomViewCallback fullscreenCallback;
+    private ValueCallback<Uri[]> uploadCallback;
+    private ScriptHandler documentScript;
+    private String injection;
+    private String mobileUserAgent;
+    private float selectedRate = 1;
+    private boolean desktop;
+    private boolean foreground;
+    private boolean destroyed;
+    private boolean failedNavigation;
+    private int previousOrientation;
+    private long lastBlockedMessage;
+
+    private static final class FrameState {
+        JSONObject value;
+        long received;
+        boolean main;
+    }
+
+    private final Runnable heartbeat = new Runnable() {
+        @Override public void run() {
+            if (destroyed || !foreground) return;
+            // Poll as a fallback for WebViews without the scoped message bridge.
+            if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
+                    && isBiliHttps(browser.getUrl())) {
+                browser.evaluateJavascript("window.__BiliSpeed ? JSON.stringify(window.__BiliSpeed.snapshot()) : null", value -> {
+                    try {
+                        Object parsed = new org.json.JSONTokener(value).nextValue();
+                        if (parsed instanceof String) {
+                            FrameState state = new FrameState();
+                            state.value = new JSONObject((String) parsed);
+                            state.received = SystemClock.elapsedRealtime();
+                            state.main = true;
+                            frameStates.put(null, state);
+                        }
+                    } catch (Exception ignored) { }
+                    updatePlaybackStatus();
+                });
+            }
+            updatePlaybackStatus();
+            handler.postDelayed(this, 1500);
+        }
+    };
+
+    @Override public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        preferences = getSharedPreferences("playback", MODE_PRIVATE);
+        selectedRate = preferences.getBoolean("remember", true)
+                ? preferences.getFloat("rate", 1) : 1;
+        if (savedInstanceState != null) selectedRate = savedInstanceState.getFloat("selectedRate", selectedRate);
+        if (!validRate(selectedRate)) selectedRate = 1;
+        desktop = preferences.getBoolean("desktop", false);
+        try (InputStream input = getAssets().open("speed-controller.js")) {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+            injection = new String(output.toByteArray(), StandardCharsets.UTF_8);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Missing playback controller", exception);
+        }
+        buildInterface();
+        configureBrowser();
+        updater = new AppUpdater(this);
+        if (Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::goBack);
+        }
+        if (savedInstanceState == null || browser.restoreState(savedInstanceState) == null) {
+            String shared = sharedUrl(getIntent());
+            browser.loadUrl(shared != null ? mobileUrl(shared) : desktop ? "https://www.bilibili.com/" : HOME);
+        }
+        updateFloatingLabel();
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private void buildInterface() {
+        Window window = getWindow();
+        if (Build.VERSION.SDK_INT >= 30) window.setDecorFitsSystemWindows(false);
+        root = new FrameLayout(this);
+        root.setBackgroundColor(Color.WHITE);
+        setContentView(root);
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets safe = insets.getInsets(WindowInsets.Type.systemBars()
+                        | WindowInsets.Type.displayCutout() | WindowInsets.Type.ime());
+                root.setPadding(safe.left, safe.top, safe.right, safe.bottom);
+            } else {
+                root.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+                        insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
+            }
+            root.post(this::positionFloating);
+            return insets;
+        });
+        browser = new WebView(this);
+        browser.setId(View.generateViewId());
+        root.addView(browser, new FrameLayout.LayoutParams(-1, -1));
+        fullscreenHost = new FrameLayout(this);
+        fullscreenHost.setBackgroundColor(Color.BLACK);
+        fullscreenHost.setVisibility(View.GONE);
+        root.addView(fullscreenHost, new FrameLayout.LayoutParams(-1, -1));
+
+        errorPanel = new LinearLayout(this);
+        errorPanel.setOrientation(LinearLayout.VERTICAL);
+        errorPanel.setGravity(Gravity.CENTER);
+        errorPanel.setPadding(dp(28), dp(28), dp(28), dp(28));
+        errorPanel.setBackgroundColor(Color.WHITE);
+        TextView title = text("页面暂时打不开", 22, INK);
+        title.setTypeface(null, Typeface.BOLD);
+        errorPanel.addView(title);
+        errorText = text("检查网络后重试", 14, MUTED);
+        errorText.setGravity(Gravity.CENTER);
+        errorText.setPadding(0, dp(16), 0, dp(22));
+        errorPanel.addView(errorText);
+        Button retry = button("重新加载", true);
+        retry.setOnClickListener(view -> browser.reload());
+        errorPanel.addView(retry, new LinearLayout.LayoutParams(dp(180), dp(48)));
+        errorPanel.setVisibility(View.GONE);
+        root.addView(errorPanel, new FrameLayout.LayoutParams(-1, -1));
+
+        progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progress.setMax(100);
+        progress.setProgressTintList(android.content.res.ColorStateList.valueOf(PINK));
+        root.addView(progress, new FrameLayout.LayoutParams(-1, dp(2), Gravity.TOP));
+
+        floating = new LinearLayout(this);
+        floating.setGravity(Gravity.CENTER);
+        floating.setElevation(dp(6));
+        TextView menu = text("···", 24, INK);
+        menu.setGravity(Gravity.CENTER);
+        menu.setContentDescription("浏览器菜单");
+        menu.setBackground(surface(Color.WHITE, 24, Color.rgb(235, 231, 233)));
+        menu.setOnClickListener(view -> showBrowserMenu());
+        floating.addView(menu, new LinearLayout.LayoutParams(dp(44), dp(48)));
+        speedButton = text("1x  倍速", 15, Color.WHITE);
+        speedButton.setGravity(Gravity.CENTER);
+        speedButton.setTypeface(null, Typeface.BOLD);
+        speedButton.setBackground(surface(PINK, 24, PINK));
+        speedButton.setOnClickListener(view -> openSpeedPanel());
+        LinearLayout.LayoutParams speedLayout = new LinearLayout.LayoutParams(dp(92), dp(48));
+        speedLayout.leftMargin = dp(6);
+        floating.addView(speedButton, speedLayout);
+        root.addView(floating, new FrameLayout.LayoutParams(dp(142), dp(48)));
+        View.OnTouchListener drag = new View.OnTouchListener() {
+            private float downX, downY, startX, startY;
+            private boolean moved;
+            @Override public boolean onTouch(View view, MotionEvent event) {
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    downX = event.getRawX(); downY = event.getRawY();
+                    startX = floating.getTranslationX(); startY = floating.getTranslationY();
+                    moved = false;
+                    return true;
+                }
+                if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
+                    float dx = event.getRawX() - downX, dy = event.getRawY() - downY;
+                    if (Math.hypot(dx, dy) > dp(8)) moved = true;
+                    if (moved) {
+                        floating.setTranslationX(clamp(startX + dx, dp(8), maxFloatX()));
+                        floating.setTranslationY(clamp(startY + dy, dp(8), maxFloatY()));
+                    }
+                    return true;
+                }
+                if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+                    if (moved) saveFloatingPosition(); else view.performClick();
+                    return true;
+                }
+                return event.getActionMasked() == MotionEvent.ACTION_CANCEL;
+            }
+        };
+        menu.setOnTouchListener(drag);
+        speedButton.setOnTouchListener(drag);
+        root.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) positionFloating();
+        });
+        root.post(this::positionFloating);
+        setSystemBarsFullscreen(false);
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private void configureBrowser() {
+        WebSettings settings = browser.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        // B站 resolves video streams asynchronously after a tap. Allow its player to
+        // start after that request completes, as it does in the mobile app.
+        settings.setMediaPlaybackRequiresUserGesture(false);
+        settings.setAllowFileAccess(false);
+        settings.setAllowContentAccess(false);
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        settings.setUseWideViewPort(true);
+        settings.setLoadWithOverviewMode(true);
+        settings.setBuiltInZoomControls(true);
+        settings.setDisplayZoomControls(false);
+        settings.setSupportMultipleWindows(true);
+        settings.setJavaScriptCanOpenWindowsAutomatically(false);
+        settings.setSafeBrowsingEnabled(true);
+        mobileUserAgent = WebSettings.getDefaultUserAgent(this).replace("; wv", "").replace(" Version/4.0", "");
+        applyUserAgent();
+        CookieManager.getInstance().setAcceptCookie(true);
+        CookieManager.getInstance().setAcceptThirdPartyCookies(browser, true);
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
+
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(browser, "BiliSpeedBridge", ORIGINS,
+                    (view, message, sourceOrigin, isMainFrame, replyProxy) -> {
+                if (!isBiliHttps(sourceOrigin.toString()) || !foreground) return;
+                try {
+                    String payload = message.getData();
+                    if (payload == null || payload.length() > 2048) return;
+                    JSONObject data = new JSONObject(payload);
+                    if (!"state".equals(data.optString("type"))) return;
+                    boolean fresh = !frameStates.containsKey(replyProxy);
+                    FrameState state = new FrameState();
+                    state.value = data;
+                    state.main = isMainFrame;
+                    state.received = SystemClock.elapsedRealtime();
+                    frameStates.put(replyProxy, state);
+                    if (fresh || Math.abs(data.optDouble("selected", 1) - selectedRate) > 0.001) {
+                        replyProxy.postMessage(configMessage());
+                    }
+                    updatePlaybackStatus();
+                } catch (Exception ignored) { }
+            });
+        }
+        updateDocumentScript();
+        browser.setWebViewClient(new WebViewClient() {
+            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                // Frame requests must not replace the top-level page.
+                if (!request.isForMainFrame()) {
+                    String scheme = request.getUrl().getScheme();
+                    return !("https".equals(scheme) || "about".equals(scheme) || "blob".equals(scheme));
+                }
+                return navigate(request.getUrl().toString(), request.hasGesture());
+            }
+            @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                view.getSettings().setMediaPlaybackRequiresUserGesture(!isBiliHttps(url));
+                failedNavigation = false;
+                errorPanel.setVisibility(View.GONE);
+                frameStates.clear();
+                progress.setProgress(0);
+                progress.setVisibility(View.VISIBLE);
+                updatePlaybackStatus();
+            }
+            @Override public void onPageFinished(WebView view, String url) {
+                progress.setVisibility(View.GONE);
+                injectIntoPage();
+                CookieManager.getInstance().flush();
+            }
+            @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                if (request.isForMainFrame()) showPageError("检查网络连接，或稍后再试。\n" + error.getDescription());
+            }
+            @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+                if (request.isForMainFrame() && response.getStatusCode() >= 400) {
+                    showPageError("网站返回 " + response.getStatusCode() + "，请稍后重试。\n也可以通过菜单切换电脑版网页。");
+                }
+            }
+            @Override public void onReceivedSslError(WebView view, SslErrorHandler sslHandler, SslError error) {
+                sslHandler.cancel();
+                showPageError("网站的安全连接未能建立，请检查网络和系统时间。");
+            }
+        });
+        browser.setWebChromeClient(new WebChromeClient() {
+            @Override public void onProgressChanged(WebView view, int value) {
+                progress.setProgress(value);
+                progress.setVisibility(value < 100 && !failedNavigation ? View.VISIBLE : View.GONE);
+            }
+            @Override public void onShowCustomView(View view, CustomViewCallback callback) {
+                enterFullscreen(view, callback);
+            }
+            @Override public void onHideCustomView() { exitFullscreen(); }
+            @Override public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, android.os.Message resultMsg) {
+                if (!isUserGesture) return false;
+                // A short-lived WebView resolves target=_blank without allowing app popups.
+                WebView popup = new WebView(MainActivity.this);
+                java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
+                Runnable close = () -> { if (closed.compareAndSet(false, true)) popup.destroy(); };
+                popup.setWebViewClient(new WebViewClient() {
+                    @Override public boolean shouldOverrideUrlLoading(WebView ignored, WebResourceRequest request) {
+                        String url = request.getUrl().toString();
+                        if (!navigate(url, true) && "https".equals(request.getUrl().getScheme())) browser.loadUrl(mobileUrl(url));
+                        handler.post(close);
+                        return true;
+                    }
+                });
+                ((WebView.WebViewTransport) resultMsg.obj).setWebView(popup);
+                resultMsg.sendToTarget();
+                handler.postDelayed(close, 10000);
+                return true;
+            }
+            @Override public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (uploadCallback != null) uploadCallback.onReceiveValue(null);
+                uploadCallback = callback;
+                try { startActivityForResult(params.createIntent(), FILE_PICKER); }
+                catch (ActivityNotFoundException exception) {
+                    uploadCallback.onReceiveValue(null);
+                    uploadCallback = null;
+                    toast("没有可用的文件选择器");
+                }
+                return true;
+            }
+        });
+        browser.setDownloadListener((url, userAgent, disposition, mimeType, length) -> {
+            if (url.toLowerCase(Locale.ROOT).contains(".apk")) toast("请通过网页继续浏览");
+            else openExternal(url);
+        });
+    }
+
+    private void updateDocumentScript() {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return;
+        if (documentScript != null) documentScript.remove();
+        documentScript = WebViewCompat.addDocumentStartJavaScript(browser,
+                "window.__BILI_SPEED_INITIAL__=" + selectedRate + ";\n" + injection, ORIGINS);
+    }
+
+    private void injectIntoPage() {
+        if (destroyed || !isBiliHttps(browser.getUrl())) return;
+        browser.evaluateJavascript("window.__BILI_SPEED_INITIAL__=" + selectedRate + ";\n" + injection
+                + "\nwindow.__BiliSpeed && window.__BiliSpeed.setRate(" + selectedRate + ");", null);
+    }
+
+    private String configMessage() { return "{\"type\":\"config\",\"rate\":" + selectedRate + "}"; }
+
+    static boolean validRate(float rate) { return Float.isFinite(rate) && rate >= 0.25f && rate <= 5; }
+
+    void selectRate(float rate) {
+        if (!validRate(rate)) return;
+        selectedRate = Math.round(rate * 100) / 100f;
+        if (preferences.getBoolean("remember", true)) preferences.edit().putFloat("rate", selectedRate).apply();
+        updateDocumentScript();
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            for (JavaScriptReplyProxy proxy : new ArrayList<>(frameStates.keySet())) {
+                if (proxy != null) { try { proxy.postMessage(configMessage()); } catch (Exception ignored) { } }
+            }
+        }
+        injectIntoPage();
+        updateFloatingLabel();
+        updatePanelSelection();
+        updatePlaybackStatus();
+    }
+
+    private void updateFloatingLabel() {
+        speedButton.setText(formatRate(selectedRate) + "  倍速");
+        speedButton.setContentDescription("播放倍速 " + formatRate(selectedRate) + "，点击调节，拖动可移动");
+    }
+
+    private void updatePlaybackStatus() {
+        if (browser == null) return;
+        boolean playing = false, ready = false, hasVideo = false, live = false, applied = true;
+        long now = SystemClock.elapsedRealtime();
+        frameStates.entrySet().removeIf(entry -> now - entry.getValue().received > 10000);
+        for (FrameState state : frameStates.values()) {
+            if (now - state.received > 4500) continue;
+            JSONObject data = state.value;
+            boolean video = data.optInt("videos") > 0;
+            hasVideo |= video;
+            playing |= data.optBoolean("playing");
+            ready |= video && data.optBoolean("ready");
+            live |= video && data.optBoolean("live");
+            if (video && data.optBoolean("ready") && !data.optBoolean("live")) {
+                applied &= Math.abs(data.optDouble("rate", 1) - selectedRate) < 0.01;
+            }
+        }
+        if (playing && foreground) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        if (statusText != null) {
+            if (live) statusText.setText("直播保持 1x；倍速将用于普通视频");
+            else if (ready && applied) statusText.setText("已应用 " + formatRate(selectedRate) + " · " + (playing ? "正在播放" : "视频已就绪"));
+            else if (ready) statusText.setText("正在应用 " + formatRate(selectedRate) + "…");
+            else if (hasVideo) statusText.setText("已选择 " + formatRate(selectedRate) + "，视频加载后生效");
+            else statusText.setText("已选择 " + formatRate(selectedRate) + "，打开视频后自动生效");
+        }
+    }
+
+    void openSpeedPanel() {
+        if (speedDialog != null && speedDialog.isShowing()) return;
+        speedDialog = new Dialog(this);
+        speedDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setFocusableInTouchMode(true);
+        panel.setPadding(dp(22), dp(14), dp(22), dp(18));
+        panel.setBackground(surface(Color.WHITE, 24, Color.WHITE));
+        View handle = new View(this);
+        handle.setBackground(surface(Color.rgb(223, 223, 227), 3, Color.rgb(223, 223, 227)));
+        LinearLayout.LayoutParams handleLayout = new LinearLayout.LayoutParams(dp(34), dp(4));
+        handleLayout.gravity = Gravity.CENTER_HORIZONTAL;
+        handleLayout.bottomMargin = dp(18);
+        panel.addView(handle, handleLayout);
+        LinearLayout heading = new LinearLayout(this);
+        heading.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = text("播放倍速", 22, INK);
+        title.setTypeface(null, Typeface.BOLD);
+        heading.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        chosenText = text(formatRate(selectedRate), 26, PINK);
+        chosenText.setTypeface(null, Typeface.BOLD);
+        heading.addView(chosenText);
+        panel.addView(heading);
+        statusText = text("", 13, MUTED);
+        statusText.setPadding(0, dp(8), 0, dp(18));
+        statusText.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        panel.addView(statusText);
+
+        presetButtons.clear();
+        for (int row = 0; row < 3; row++) {
+            LinearLayout line = new LinearLayout(this);
+            for (int column = 0; column < 3; column++) {
+                float rate = PRESETS[row * 3 + column];
+                Button item = button(formatRate(rate), false);
+                item.setContentDescription("选择 " + formatRate(rate) + " 倍速");
+                item.setTag(rate);
+                item.setOnClickListener(view -> selectRate(rate));
+                LinearLayout.LayoutParams itemLayout = new LinearLayout.LayoutParams(0, dp(48), 1);
+                itemLayout.rightMargin = column < 2 ? dp(8) : 0;
+                line.addView(item, itemLayout);
+                presetButtons.add(item);
+            }
+            LinearLayout.LayoutParams lineLayout = new LinearLayout.LayoutParams(-1, -2);
+            lineLayout.bottomMargin = dp(8);
+            panel.addView(line, lineLayout);
+        }
+
+        TextView customLabel = text("自由调节 · 0.25–5x", 14, MUTED);
+        customLabel.setPadding(0, dp(10), 0, dp(4));
+        panel.addView(customLabel);
+        speedSlider = new SeekBar(this);
+        speedSlider.setMax(95);
+        speedSlider.setContentDescription("自由调节倍速，0.25 到 5 倍");
+        speedSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int value, boolean fromUser) {
+                if (fromUser) {
+                    float rate = 0.25f + value * 0.05f;
+                    chosenText.setText(formatRate(rate));
+                    customInput.setText(number(rate));
+                }
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) { }
+            @Override public void onStopTrackingTouch(SeekBar bar) { selectRate(0.25f + bar.getProgress() * 0.05f); }
+        });
+        panel.addView(speedSlider, new LinearLayout.LayoutParams(-1, dp(44)));
+        LinearLayout customRow = new LinearLayout(this);
+        customRow.setGravity(Gravity.CENTER_VERTICAL);
+        customInput = new EditText(this);
+        customInput.setSingleLine(true);
+        customInput.setTextSize(16);
+        customInput.setTextColor(INK);
+        customInput.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        customInput.setContentDescription("自定义倍速，输入 0.25 到 5");
+        customInput.setPadding(dp(14), 0, dp(14), 0);
+        customInput.setBackground(surface(Color.rgb(247, 247, 249), 12, Color.rgb(235, 235, 239)));
+        customRow.addView(customInput, new LinearLayout.LayoutParams(0, dp(46), 1));
+        Button apply = button("应用", false);
+        apply.setOnClickListener(view -> {
+            try {
+                float rate = Float.parseFloat(customInput.getText().toString().trim().replace(',', '.'));
+                if (!validRate(rate)) throw new IllegalArgumentException();
+                selectRate(rate);
+                customInput.clearFocus();
+                ((InputMethodManager) getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(customInput.getWindowToken(), 0);
+            } catch (IllegalArgumentException exception) { customInput.setError("请输入 0.25 到 5 之间的数值"); }
+        });
+        LinearLayout.LayoutParams applyLayout = new LinearLayout.LayoutParams(dp(82), dp(46));
+        applyLayout.leftMargin = dp(10);
+        customRow.addView(apply, applyLayout);
+        panel.addView(customRow);
+        Switch remember = new Switch(this);
+        remember.setText("记住上次倍速");
+        remember.setTextSize(14);
+        remember.setTextColor(INK);
+        remember.setChecked(preferences.getBoolean("remember", true));
+        remember.setPadding(0, dp(12), 0, dp(12));
+        remember.setOnCheckedChangeListener((button, checked) -> {
+            SharedPreferences.Editor editor = preferences.edit().putBoolean("remember", checked);
+            if (checked) editor.putFloat("rate", selectedRate); else editor.remove("rate");
+            editor.apply();
+        });
+        panel.addView(remember, new LinearLayout.LayoutParams(-1, dp(52)));
+        Button done = button("完成", true);
+        done.setOnClickListener(view -> speedDialog.dismiss());
+        panel.addView(done, new LinearLayout.LayoutParams(-1, dp(48)));
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.setBackgroundColor(Color.TRANSPARENT);
+        scroll.addView(panel);
+        speedDialog.setContentView(scroll);
+        speedDialog.setOnDismissListener(dialog -> {
+            statusText = null; chosenText = null; customInput = null; speedSlider = null;
+            presetButtons.clear();
+        });
+        Window window = speedDialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            window.setDimAmount(0.25f);
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+                    | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+            window.setGravity(Gravity.BOTTOM);
+        }
+        speedDialog.show();
+        panel.requestFocus();
+        if (window != null) {
+            window.setLayout(-1, -2);
+            int available = Math.max(dp(180), root.getHeight() - root.getPaddingTop() - root.getPaddingBottom() - dp(20));
+            scroll.measure(View.MeasureSpec.makeMeasureSpec(root.getWidth(), View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(available, View.MeasureSpec.AT_MOST));
+            window.setLayout(-1, Math.min(scroll.getMeasuredHeight(), available));
+        }
+        updatePanelSelection();
+        updatePlaybackStatus();
+    }
+
+    private void updatePanelSelection() {
+        if (chosenText == null) return;
+        chosenText.setText(formatRate(selectedRate));
+        customInput.setText(number(selectedRate));
+        speedSlider.setProgress(Math.round((selectedRate - 0.25f) / 0.05f));
+        for (Button button : presetButtons) {
+            boolean active = Math.abs((Float) button.getTag() - selectedRate) < 0.001;
+            button.setTextColor(active ? Color.WHITE : INK);
+            button.setBackground(surface(active ? PINK : Color.rgb(247, 247, 249), 12,
+                    active ? PINK : Color.rgb(237, 237, 241)));
+            button.setSelected(active);
+        }
+    }
+
+    private void showBrowserMenu() {
+        String[] items = {"B站首页", "后退", "刷新", "打开链接", "复制当前链接", "在系统浏览器打开",
+                desktop ? "切换手机网页" : "切换电脑版网页", updater.menuLabel(),
+                "启动时检查更新：" + (updater.automaticEnabled() ? "开" : "关"), "项目源码", "关于"};
+        new AlertDialog.Builder(this).setTitle("浏览器").setItems(items, (dialog, which) -> {
+            switch (which) {
+                case 0: browser.loadUrl(desktop ? "https://www.bilibili.com/" : HOME); break;
+                case 1: goBack(); break;
+                case 2: browser.reload(); break;
+                case 3: showOpenLink(); break;
+                case 4:
+                    String url = browser.getUrl();
+                    if (url != null) {
+                        ((android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(
+                                android.content.ClipData.newPlainText("视频链接", url));
+                        toast("链接已复制");
+                    }
+                    break;
+                case 5: openExternal(browser.getUrl()); break;
+                case 6:
+                    desktop = !desktop;
+                    preferences.edit().putBoolean("desktop", desktop).apply();
+                    applyUserAgent();
+                    browser.loadUrl(mobileUrl(browser.getUrl() == null ? HOME : browser.getUrl()));
+                    break;
+                case 7: updater.checkManually(); break;
+                case 8: updater.toggleAutomatic(); break;
+                case 9: openExternal("https://github.com/" + BuildConfig.UPDATE_REPOSITORY); break;
+                case 10: new AlertDialog.Builder(this).setTitle("B站倍速浏览器 " + BuildConfig.VERSION_NAME)
+                        .setMessage("打开即进入B站，点击粉色按钮调节倍速，拖动按钮可移动位置。\n\n"
+                                + "支持 1.25x、1.5x、2x、2.5x、3x、3.5x、4x、5x，"
+                                + "也可输入 0.25–5x 的自定义速度。\n\n"
+                                + "这是个人第三方浏览器，使用B站官方网页。部分功能仅在官方App内提供。"
+                                + "会员和付费内容仍需相应账号权限。\n\n"
+                                + "菜单可检查更新；启动检查每天最多一次，安装需在系统中确认。")
+                        .setPositiveButton("知道了", null).show(); break;
+            }
+        }).show();
+    }
+
+    private void showOpenLink() {
+        EditText input = new EditText(this);
+        input.setSingleLine();
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        input.setHint("粘贴B站链接或 BV 号");
+        LinearLayout holder = new LinearLayout(this);
+        holder.setPadding(dp(20), dp(10), dp(20), 0);
+        holder.addView(input, new LinearLayout.LayoutParams(-1, -2));
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("打开链接").setView(holder)
+                .setNegativeButton("取消", null).setPositiveButton("打开", null).create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
+            String value = input.getText().toString().trim();
+            if (value.matches("BV[0-9A-Za-z]{10}")) value = HOME + "video/" + value;
+            if (!value.contains("://")) value = "https://" + value;
+            if (!isHttps(value)) { input.setError("请输入 HTTPS 网页链接或 BV 号"); return; }
+            browser.loadUrl(mobileUrl(value));
+            dialog.dismiss();
+        }));
+        dialog.show();
+    }
+
+    private boolean navigate(String url, boolean gesture) {
+        if (isHttps(url)) {
+            String mapped = mobileUrl(url);
+            if (!mapped.equals(url)) { browser.loadUrl(mapped); return true; }
+            return false;
+        }
+        if (url.startsWith("http://")) {
+            browser.loadUrl(mobileUrl("https://" + url.substring(7)));
+            return true;
+        }
+        String fallback = deepLinkFallback(url);
+        if (fallback != null) {
+            // Auto app-open prompts should not interrupt a video already playing.
+            if (gesture) browser.loadUrl(mobileUrl(fallback));
+            return true;
+        }
+        if (gesture && SystemClock.elapsedRealtime() - lastBlockedMessage > 2500) {
+            lastBlockedMessage = SystemClock.elapsedRealtime();
+            toast("此操作需要官方App；可通过菜单打开视频网页链接");
+        }
+        return true;
+    }
+
+    static String deepLinkFallback(String url) {
+        try {
+            Uri uri = Uri.parse(url);
+            if ("intent".equals(uri.getScheme())) {
+                Intent intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME);
+                String fallback = intent.getStringExtra("browser_fallback_url");
+                if (isBiliHttps(fallback)) return fallback;
+                if (intent.getData() != null && "bilibili".equals(intent.getData().getScheme())) {
+                    return deepLinkFallback(intent.getData().toString());
+                }
+                return null;
+            }
+            if (!"bilibili".equals(uri.getScheme())) return null;
+            Matcher bv = Pattern.compile("BV[0-9A-Za-z]{10}").matcher(url);
+            if (bv.find()) return HOME + "video/" + bv.group();
+            Matcher av = Pattern.compile("(?:video/(?:av)?|aid=)([0-9]+)").matcher(url);
+            if (av.find()) return HOME + "video/av" + av.group(1);
+            Matcher bangumi = Pattern.compile("(?:bangumi/)?(?:season|play)/([0-9]+)").matcher(url);
+            if (bangumi.find()) return HOME + "bangumi/play/ss" + bangumi.group(1);
+        } catch (Exception ignored) { }
+        return null;
+    }
+
+    private String mobileUrl(String url) {
+        Uri uri = Uri.parse(url);
+        String host = uri.getHost();
+        if (host == null || !(host.equalsIgnoreCase("www.bilibili.com") || host.equalsIgnoreCase("m.bilibili.com"))) return url;
+        String path = uri.getPath() == null ? "/" : uri.getPath();
+        if (path.equals("/") || path.isEmpty() || path.startsWith("/video/") || path.startsWith("/bangumi/play/")) {
+            return uri.buildUpon().authority(desktop ? "www.bilibili.com" : "m.bilibili.com").scheme("https").build().toString();
+        }
+        return url;
+    }
+
+    static boolean isBiliHttps(String url) {
+        if (!isHttps(url)) return false;
+        String host = Uri.parse(url).getHost().toLowerCase(Locale.ROOT);
+        return host.equals("bilibili.com") || host.endsWith(".bilibili.com");
+    }
+
+    static boolean isHttps(String url) {
+        if (url == null) return false;
+        Uri uri = Uri.parse(url);
+        return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null
+                && !uri.getHost().isEmpty() && uri.getUserInfo() == null;
+    }
+
+    private void applyUserAgent() {
+        String ua = mobileUserAgent;
+        if (desktop) ua = ua.replaceFirst("\\([^)]*\\)", "(X11; Linux x86_64)").replace(" Mobile", "");
+        browser.getSettings().setUserAgentString(ua);
+    }
+
+    private void openExternal(String url) {
+        if (!isHttps(url)) return;
+        try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)); }
+        catch (ActivityNotFoundException exception) { toast("没有可用的系统浏览器"); }
+    }
+
+    private String sharedUrl(Intent intent) {
+        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) return null;
+        String value = intent.getStringExtra(Intent.EXTRA_TEXT);
+        if (value == null) return null;
+        Matcher matcher = Pattern.compile("https://[^\\s<>\"，。]+", Pattern.CASE_INSENSITIVE).matcher(value);
+        if (matcher.find() && isHttps(matcher.group())) return matcher.group();
+        return null;
+    }
+
+    private void showPageError(String message) {
+        failedNavigation = true;
+        errorText.setText(message);
+        errorPanel.setVisibility(View.VISIBLE);
+        progress.setVisibility(View.GONE);
+    }
+
+    private void enterFullscreen(View view, WebChromeClient.CustomViewCallback callback) {
+        if (fullscreenView != null) { callback.onCustomViewHidden(); return; }
+        fullscreenView = view;
+        fullscreenCallback = callback;
+        previousOrientation = getRequestedOrientation();
+        fullscreenHost.addView(view, new FrameLayout.LayoutParams(-1, -1));
+        fullscreenHost.setVisibility(View.VISIBLE);
+        browser.setVisibility(View.INVISIBLE);
+        setSystemBarsFullscreen(true);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        root.post(this::positionFloating);
+    }
+
+    private void exitFullscreen() {
+        if (fullscreenView == null) return;
+        fullscreenHost.removeView(fullscreenView);
+        fullscreenView = null;
+        fullscreenHost.setVisibility(View.GONE);
+        browser.setVisibility(View.VISIBLE);
+        WebChromeClient.CustomViewCallback callback = fullscreenCallback;
+        fullscreenCallback = null;
+        if (callback != null) callback.onCustomViewHidden();
+        setSystemBarsFullscreen(false);
+        setRequestedOrientation(previousOrientation);
+        root.post(this::positionFloating);
+    }
+
+    private void setSystemBarsFullscreen(boolean fullscreen) {
+        Window window = getWindow();
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsetsController controller = window.getInsetsController();
+            if (controller == null) return;
+            controller.setSystemBarsAppearance(fullscreen ? 0 : WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                            | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+                    WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+            if (fullscreen) {
+                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                controller.hide(WindowInsets.Type.systemBars());
+            } else controller.show(WindowInsets.Type.systemBars());
+        } else {
+            window.getDecorView().setSystemUiVisibility(fullscreen
+                    ? View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    : View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        }
+    }
+
+    private float maxFloatX() { return Math.max(dp(8), root.getWidth() - root.getPaddingLeft() - root.getPaddingRight() - dp(150)); }
+    private float maxFloatY() { return Math.max(dp(8), root.getHeight() - root.getPaddingTop() - root.getPaddingBottom() - dp(56)); }
+    private String positionPrefix() { return fullscreenView != null ? "fullscreen_" : "normal_"; }
+    private void positionFloating() {
+        if (floating == null || root.getWidth() == 0) return;
+        String prefix = positionPrefix();
+        floating.setTranslationX(dp(8) + preferences.getFloat(prefix + "x", 1) * (maxFloatX() - dp(8)));
+        floating.setTranslationY(dp(8) + preferences.getFloat(prefix + "y", 0.84f) * (maxFloatY() - dp(8)));
+    }
+    private void saveFloatingPosition() {
+        String prefix = positionPrefix();
+        preferences.edit().putFloat(prefix + "x", (floating.getTranslationX() - dp(8)) / Math.max(1, maxFloatX() - dp(8)))
+                .putFloat(prefix + "y", (floating.getTranslationY() - dp(8)) / Math.max(1, maxFloatY() - dp(8))).apply();
+    }
+
+    private void goBack() {
+        if (speedDialog != null && speedDialog.isShowing()) speedDialog.dismiss();
+        else if (fullscreenView != null) exitFullscreen();
+        else if (browser.canGoBack()) browser.goBack();
+        else finish();
+    }
+    @Override public void onBackPressed() { goBack(); }
+    @Override public void onConfigurationChanged(Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        if (speedDialog != null) speedDialog.dismiss();
+        root.post(this::positionFloating);
+    }
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        String shared = sharedUrl(intent);
+        if (shared != null) browser.loadUrl(mobileUrl(shared));
+    }
+    @Override protected void onResume() {
+        super.onResume();
+        foreground = true;
+        if (browser != null) { browser.onResume(); injectIntoPage(); }
+        handler.removeCallbacks(heartbeat);
+        handler.post(heartbeat);
+        if (updater != null) updater.onResume();
+    }
+    @Override protected void onPause() {
+        if (updater != null) updater.onPause();
+        foreground = false;
+        handler.removeCallbacks(heartbeat);
+        if (browser != null) {
+            if (isBiliHttps(browser.getUrl())) browser.evaluateJavascript("window.__BiliSpeed && window.__BiliSpeed.pause();", null);
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+                for (JavaScriptReplyProxy proxy : frameStates.keySet()) {
+                    if (proxy != null) { try { proxy.postMessage("{\"type\":\"pause\"}"); } catch (Exception ignored) { } }
+                }
+            }
+            browser.onPause();
+            CookieManager.getInstance().flush();
+        }
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        super.onPause();
+    }
+    @Override protected void onSaveInstanceState(Bundle state) {
+        browser.saveState(state);
+        state.putFloat("selectedRate", selectedRate);
+        super.onSaveInstanceState(state);
+    }
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request == FILE_PICKER && uploadCallback != null) {
+            uploadCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, data));
+            uploadCallback = null;
+        }
+    }
+    @Override protected void onDestroy() {
+        destroyed = true;
+        if (updater != null) updater.close();
+        handler.removeCallbacksAndMessages(null);
+        if (speedDialog != null) speedDialog.dismiss();
+        exitFullscreen();
+        if (uploadCallback != null) uploadCallback.onReceiveValue(null);
+        if (documentScript != null && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) documentScript.remove();
+        frameStates.clear();
+        root.removeView(browser);
+        browser.stopLoading();
+        browser.destroy();
+        super.onDestroy();
+    }
+
+    WebView browserForTesting() { return browser; }
+    Dialog speedDialogForTesting() { return speedDialog; }
+    boolean fullscreenForTesting() { return fullscreenView != null; }
+
+    private TextView text(String value, int size, int color) {
+        TextView view = new TextView(this);
+        view.setText(value); view.setTextSize(size); view.setTextColor(color);
+        return view;
+    }
+    private Button button(String value, boolean primary) {
+        Button view = new Button(this);
+        view.setText(value); view.setTextSize(15); view.setAllCaps(false);
+        view.setTextColor(primary ? Color.WHITE : INK);
+        view.setTypeface(null, Typeface.BOLD);
+        view.setMinHeight(0); view.setMinimumHeight(0); view.setMinWidth(0); view.setMinimumWidth(0);
+        view.setPadding(dp(8), 0, dp(8), 0);
+        view.setBackground(surface(primary ? PINK : Color.rgb(247, 247, 249), 12,
+                primary ? PINK : Color.rgb(237, 237, 241)));
+        return view;
+    }
+    private GradientDrawable surface(int color, int radius, int stroke) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color); drawable.setCornerRadius(dp(radius)); drawable.setStroke(dp(1), stroke);
+        return drawable;
+    }
+    private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+    private static float clamp(float value, float minimum, float maximum) { return Math.max(minimum, Math.min(value, maximum)); }
+    static String number(float rate) { return new java.math.BigDecimal(Float.toString(Math.round(rate * 100) / 100f)).stripTrailingZeros().toPlainString(); }
+    static String formatRate(float rate) { return number(rate) + "x"; }
+    private void toast(String message) { Toast.makeText(this, message, Toast.LENGTH_SHORT).show(); }
+}
