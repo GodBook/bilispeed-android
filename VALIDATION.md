@@ -1,5 +1,23 @@
 # Android 16 验收记录
 
+## 1.1.1：性能与稳定性
+
+- 正式签名 APK 的 assembleRelease、lintRelease、JavaScript 语法和发布脚本 PowerShell 语法检查通过；lint 为 0 errors / 4 warnings。
+- Android 16 / API 36 模拟器上验证正式 APK：16 项播放及浏览器测试、12 项更新测试。
+- 400 个新增节点的整页播放器查询从旧版 401 次降到 1 次；保留真实播放时间、所有倍速档位、换播放器、iframe、Shadow DOM、全屏与屏幕唤醒检查。
+- 后台延迟 play()、新增 autoplay 视频、后台创建的 Shadow DOM iframe、重新挂载的播放器、完整分享文本、合法 URL 括号与 IPv6 地址验证通过。
+- 捕获旧逻辑保存约 8.3 MB WebView 状态造成的 TransactionTooLargeException。恢复状态上限为 256 KiB；大型内嵌测试页保存状态为 400 字节，有效 HTTPS 页面链接和 3.5x 倍速保留验证通过。
+- 更新取消后不跟随重定向，后续请求可重新开始；中断下载删除未完成文件；自动检查成功与失败间隔、时钟回调、待安装包保留和旧文件清理验证通过。
+- 同一正式 APK 已多次完成真实 B 站首页和公开视频的 5x 播放检查；重复检查中也出现模拟器系统卡顿和网站响应超时。实站检查依赖设备和网络，不视为覆盖所有视频或登录场景。
+- 从 GitHub 下载上一版 1.1.0 APK，核对新旧签名一致。证书 SHA-256：e2d8ed51e71288c8f2a0ea81e3f7ac23aba499d59ed6d7eace205e78960f94b3。APK Signature Scheme v2 校验通过。
+- 版本：versionName 1.1.1，versionCode 3，targetSdk 36，minSdk 26。
+- APK：artifacts/BiliSpeed-1.1.1-Android16.apk，1758513 字节。
+- SHA-256：385AEE75B7CEA6464B09B1E70D89E0F30A5592AFC70A847A0DC792190B193679。
+
+测试设备为 x86_64 模拟器，720 × 1600、density 300，使用宿主 GPU 并关闭 Vulkan。原环境出现解码停滞、软件图形后端系统卡顿及 System UI 无响应弹窗，已通过日志与界面检查定位；没有降低倍速测量断言。未连接实体手机，也未使用真实用户账号验证登录。
+
+优化说明与后续优先级见 OPTIMIZATION.md。发布后的真实 GitHub 更新下载和签名检查另行记录。
+
 ## 1.1.0：在线更新
 
 - 正式签名 APK 的 assembleRelease 和 lintRelease 通过，关闭调试。

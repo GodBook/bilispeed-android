@@ -40,7 +40,10 @@ public class OfficialBilibiliSmokeTest {
             SystemClock.sleep(250);
         }
         System.out.println("BILISPEED_LIVE_DIAGNOSTIC=" + js("JSON.stringify({url:location.href,title:document.title,"
-                + "videos:document.querySelectorAll('video').length,body:document.body?document.body.innerText.slice(0,350):''})"));
+                + "state:window.__BiliSpeed&&window.__BiliSpeed.snapshot(),hidden:document.hidden,focus:document.hasFocus(),"
+                + "videos:Array.from(document.querySelectorAll('video')).map(function(v){return {paused:v.paused,time:v.currentTime,"
+                + "ready:v.readyState,duration:v.duration,error:v.error&&v.error.code};}),"
+                + "body:document.body?document.body.innerText.slice(0,350):''})"));
         fail("Website condition timed out: " + condition);
     }
 
@@ -92,6 +95,8 @@ public class OfficialBilibiliSmokeTest {
             await("document.querySelector('video') && document.querySelector('video').readyState >= 2", 35);
             instrumentation.runOnMainSync(() -> activity.selectRate(5));
             await("document.querySelector('video').playbackRate === 5", 5);
+            // Some site layouts mount the player on the first tap, then show its play control.
+            if (Boolean.TRUE.equals(js("document.querySelector('video').paused"))) tapPlayer();
             await("!document.querySelector('video').paused && document.querySelector('video').currentTime > 1", 15);
             System.out.println("BILISPEED_LIVE_VIDEO=" + js("JSON.stringify(window.__BiliSpeed.snapshot())"));
             instrumentation.runOnMainSync(activity::openSpeedPanel);

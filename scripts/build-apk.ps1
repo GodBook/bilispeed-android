@@ -2,10 +2,12 @@ param(
     [switch]$RunTests,
     [switch]$RunLiveCheck,
     [switch]$RunUpdateCheck,
+    [ValidatePattern('^[A-Za-z0-9_.$,#]*$')][string]$TestFilter = '',
     [string]$AndroidSdk = $env:ANDROID_HOME,
     [string]$DeviceSerial = $env:ANDROID_SERIAL
 )
 $ErrorActionPreference = 'Stop'
+if ($TestFilter) { $RunTests = $true }
 if ($RunLiveCheck) { $RunTests = $true }
 if ($RunUpdateCheck) { $RunTests = $true }
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -95,7 +97,9 @@ try {
                 & $adb -s $DeviceSerial shell input keyevent KEYCODE_WAKEUP
                 & $adb -s $DeviceSerial shell wm dismiss-keyguard
             }
-            $testClasses = 'app.bilispeed.browser.PlaybackInstrumentationTest,app.bilispeed.browser.UpdateInstrumentationTest'
+            $testClasses = if ($TestFilter) { $TestFilter } else {
+                'app.bilispeed.browser.PlaybackInstrumentationTest,app.bilispeed.browser.UpdateInstrumentationTest'
+            }
             if ($RunLiveCheck) { $testClasses += ',app.bilispeed.browser.OfficialBilibiliSmokeTest' }
             if ($RunUpdateCheck) { $testClasses += ',app.bilispeed.browser.PublishedUpdateSmokeTest' }
             & $adb -s $DeviceSerial shell am instrument -w -r -e class $testClasses `

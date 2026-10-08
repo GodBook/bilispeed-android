@@ -9,6 +9,8 @@ import android.media.MediaMuxer;
 import android.media.MediaCodec;
 import android.media.MediaFormat;
 import android.os.SystemClock;
+import android.os.Bundle;
+import android.os.Parcel;
 import android.util.Base64;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -43,6 +45,7 @@ public class PlaybackInstrumentationTest {
     private final Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
     private MainActivity activity;
     private String media;
+    private int fixtureId;
     private static String cachedMedia;
 
     @Before public void launch() throws Exception {
@@ -110,7 +113,13 @@ public class PlaybackInstrumentationTest {
     }
 
     private void loadFixture(String origin) throws Exception {
+        loadFixture(origin, null);
+    }
+
+    private void loadFixture(String origin, String historyUrl) throws Exception {
+        int identity = ++fixtureId;
         String html = "<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'>"
+                + "<script>window.__BILISPEED_TEST_FIXTURE__=" + identity + ";</script>"
                 + "<style>body{margin:0;background:#fff}video{width:100%;max-height:280px}"
                 + "button{font-size:18px;padding:12px}</style>"
                 + "<video id='v' controls playsinline muted loop preload='auto' src='" + media + "'></video>"
@@ -120,9 +129,10 @@ public class PlaybackInstrumentationTest {
             WebView browser = activity.browserForTesting();
             browser.stopLoading();
             browser.getSettings().setMediaPlaybackRequiresUserGesture(false);
-            browser.loadDataWithBaseURL(origin, html, "text/html", "UTF-8", null);
+            browser.loadDataWithBaseURL(origin, html, "text/html", "UTF-8", historyUrl);
         });
-        await("document.getElementById('v') && document.getElementById('v').readyState >= 2", 20000);
+        await("window.__BILISPEED_TEST_FIXTURE__ === " + identity
+                + " && document.getElementById('v') && document.getElementById('v').readyState >= 2", 20000);
         if (MainActivity.isBiliHttps(origin)) await("!!window.__BiliSpeed", 10000);
     }
 
@@ -232,6 +242,9 @@ public class PlaybackInstrumentationTest {
             }
             java.util.Arrays.sort(samples);
             double measured = samples[1];
+            System.out.println("BILISPEED_RATE_PROBE=" + rate + "x measured=" + measured + " state="
+                    + js("JSON.stringify({hidden:document.hidden,state:window.__BiliSpeed.snapshot(),"
+                    + "time:document.getElementById('v').currentTime,ready:document.getElementById('v').readyState})"));
             assertEquals("Measured media speed for " + rate + "x", rate, measured, rate * 0.18 + 0.12);
             assertEquals(rate, snapshot().getDouble("rate"), 0.001);
             assertTrue((Boolean) js("document.getElementById('v').preservesPitch"));
@@ -335,6 +348,9 @@ public class PlaybackInstrumentationTest {
             activity.speedDialogForTesting().dismiss();
         });
         await("document.getElementById('v').playbackRate === 5", 5000);
+        SystemClock.sleep(6500);
+        instrumentation.runOnMainSync(() -> assertTrue("Fullscreen playback must keep the screen awake",
+                (activity.getWindow().getAttributes().flags & android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0));
         instrumentation.runOnMainSync(activity::onBackPressed);
         assertFalse(activity.fullscreenForTesting());
         assertEquals(5, snapshot().getDouble("selected"), 0.001);
@@ -349,10 +365,123 @@ public class PlaybackInstrumentationTest {
         await("document.getElementById('v').paused", 5000);
     }
 
+    @Test public void largeWebViewHistoryUsesBoundedStateAndPreservesUrlAndRate() throws Exception {
+        choose(3.5f);
+        Bundle state = new Bundle();
+        instrumentation.runOnMainSync(() -> instrumentation.callActivityOnSaveInstanceState(activity, state));
+        Parcel parcel = Parcel.obtain();
+        try {
+            parcel.writeBundle(state);
+            System.out.println("BILISPEED_SAVED_STATE_BYTES=" + parcel.dataSize());
+            assertTrue("Saved state exceeded the activity transaction budget", parcel.dataSize() < 300 * 1024);
+        } finally { parcel.recycle(); }
+        assertNull("The multi-megabyte data URL history must use the link fallback", state.getBundle("browserState"));
+        assertNull("Temporary data URLs must not be stored as a navigation fallback", state.getString("currentUrl"));
+        assertEquals(3.5f, state.getFloat("selectedRate"), 0.001f);
+        String url = "https://m.bilibili.com/__bilispeed_test__/";
+        loadFixture(url, url);
+        Bundle httpsState = new Bundle();
+        instrumentation.runOnMainSync(() -> instrumentation.callActivityOnSaveInstanceState(activity, httpsState));
+        assertEquals(url, httpsState.getString("currentUrl"));
+        assertEquals(3.5f, httpsState.getFloat("selectedRate"), 0.001f);
+    }
+
+    @Test public void bulkPageChangesDoNotRepeatWholePagePlayerQueries() throws Exception {
+        loadFixture("https://m.bilibili.com/video/__bilispeed_test__/");
+        js("window._playerQueries=0; window._originalQuery=document.querySelector;"
+                + "document.querySelector=function(selector){"
+                + "if(selector==='.video-share .m-video-player')window._playerQueries++;"
+                + "return window._originalQuery.call(this,selector);};"
+                + "var fragment=document.createDocumentFragment();"
+                + "for(var i=0;i<400;i++){var item=document.createElement('div');item.textContent='Item '+i;fragment.append(item);}"
+                + "document.body.append(fragment); true");
+        SystemClock.sleep(350);
+        int queries = ((Number) js("window._playerQueries")).intValue();
+        System.out.println("BILISPEED_BULK_PLAYER_QUERIES=" + queries);
+        assertTrue("400 added nodes caused " + queries + " whole-page player queries", queries <= 8);
+    }
+
+    @Test public void backgroundBlocksLatePlaybackAndNewAutoplayVideos() throws Exception {
+        js("document.getElementById('v').play(); true");
+        await("!document.getElementById('v').paused", 5000);
+        instrumentation.runOnMainSync(() -> instrumentation.callActivityOnPause(activity));
+        try {
+            await("document.getElementById('v').paused", 5000);
+            js("window._latePlayDone=false;document.getElementById('v').play()"
+                    + ".catch(function(){}).then(function(){window._latePlayDone=true;}); true");
+            await("window._latePlayDone", 5000);
+            assertTrue("A delayed play request restarted the background video",
+                    (Boolean) js("document.getElementById('v').paused"));
+            js("var next=document.getElementById('v').cloneNode(false);next.id='late';next.autoplay=true;"
+                    + "document.body.append(next); true");
+            await("document.getElementById('late').readyState >= 2", 15000);
+            SystemClock.sleep(300);
+            assertTrue("A newly mounted autoplay video played in the background",
+                    (Boolean) js("document.getElementById('late').paused"));
+        } finally {
+            instrumentation.runOnMainSync(() -> instrumentation.callActivityOnResume(activity));
+        }
+        assertTrue("Returning to the app should keep the paused video paused",
+                (Boolean) js("document.getElementById('v').paused"));
+        js("document.getElementById('v').play(); true");
+        await("!document.getElementById('v').paused", 5000);
+    }
+
     @Test public void bridgeIsUnavailableOnUntrustedOrigin() throws Exception {
         loadFixture("https://example.org/__bilispeed_test__/");
         assertEquals("undefined", js("typeof window.BiliSpeedBridge"));
         assertEquals("undefined", js("typeof window.__BiliSpeed"));
+    }
+
+    @Test public void reattachedShadowRootDiscoversNewVideos() throws Exception {
+        choose(3.5f);
+        js("window._host=document.createElement('div');var shadow=_host.attachShadow({mode:'open'});"
+                + "shadow.append(document.getElementById('v').cloneNode(false));document.body.append(_host);true");
+        await("window.__BiliSpeed.snapshot().videos === 2", 5000);
+        js("_host.remove();true");
+        await("window.__BiliSpeed.snapshot().videos === 1", 5000);
+        js("_host.shadowRoot.innerHTML='';var next=document.getElementById('v').cloneNode(false);"
+                + "next.id='new-shadow-video';_host.shadowRoot.append(next);document.body.append(_host);true");
+        await("_host.shadowRoot.querySelector('video').readyState >= 2", 15000);
+        await("window.__BiliSpeed.snapshot().videos === 2", 5000);
+        assertEquals(3.5, ((Number) js("_host.shadowRoot.querySelector('video').playbackRate")).doubleValue(), 0.001);
+    }
+
+    @Test public void backgroundIframeInShadowRootResumesWithLatestRate() throws Exception {
+        choose(2.5f);
+        instrumentation.runOnMainSync(() -> instrumentation.callActivityOnPause(activity));
+        try {
+            js("var host=document.createElement('div');host.id='frame-host';document.body.append(host);"
+                    + "var shadow=host.attachShadow({mode:'open'});var frame=document.createElement('iframe');"
+                    + "frame.srcdoc=document.getElementById('v').outerHTML;shadow.append(frame);true");
+            await("document.getElementById('frame-host').shadowRoot.querySelector('iframe').contentWindow.__BiliSpeed", 15000);
+            js("window._child=document.getElementById('frame-host').shadowRoot.querySelector('iframe').contentWindow;"
+                    + "_child.document.querySelector('video').play().catch(function(){});true");
+            SystemClock.sleep(300);
+            assertTrue((Boolean) js("_child.document.querySelector('video').paused"));
+        } finally {
+            instrumentation.runOnMainSync(() -> instrumentation.callActivityOnResume(activity));
+        }
+        choose(4);
+        await("_child.document.querySelector('video').readyState >= 2 && _child.document.querySelector('video').playbackRate === 4", 15000);
+        js("_child.document.querySelector('video').play();true");
+        await("!_child.document.querySelector('video').paused", 5000);
+    }
+
+    @Test public void resolvesShareTextBareLinksAndBvWithoutAcceptingInvalidUrls() {
+        assertEquals("https://b23.tv/Ab123", MainActivity.resolveUrlInput("【视频标题】 https://b23.tv/Ab123。"));
+        assertEquals("https://m.bilibili.com/video/BV1xx411c7mD", MainActivity.resolveUrlInput("观看视频 (https://m.bilibili.com/video/BV1xx411c7mD)"));
+        assertEquals("https://b23.tv/Ab123", MainActivity.resolveUrlInput("b23.tv/Ab123"));
+        assertEquals(MainActivity.HOME + "video/BV1xx411c7mD", MainActivity.resolveUrlInput("分享视频 BV1xx411c7mD"));
+        assertEquals("https://www.bilibili.com/", MainActivity.resolveUrlInput("http://www.bilibili.com/"));
+        assertEquals("https://en.wikipedia.org/wiki/Foo_(bar)", MainActivity.resolveUrlInput("https://en.wikipedia.org/wiki/Foo_(bar)"));
+        assertEquals("https://[::1]", MainActivity.resolveUrlInput("https://[::1]"));
+        assertNull(MainActivity.resolveUrlInput("javascript:alert(1)"));
+        assertNull(MainActivity.resolveUrlInput("https://user:password@m.bilibili.com/"));
+        assertNull(MainActivity.resolveUrlInput("这个文本不包含链接"));
+        assertFalse(MainActivity.isHttps("https://m.bilibili.com/path with spaces"));
+        assertFalse(MainActivity.isBiliHttps("https://m.bilibili.com:8443/"));
+        assertTrue(MainActivity.isBiliHttps("https://m.bilibili.com:443/"));
     }
 
     @Test public void deepLinksAndOriginValidation() {

@@ -18,6 +18,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Parcel;
 import android.os.SystemClock;
 import android.text.InputType;
 import android.view.Gravity;
@@ -76,6 +77,7 @@ public class MainActivity extends Activity {
     private static final int INK = Color.rgb(40, 40, 48);
     private static final int MUTED = Color.rgb(116, 116, 125);
     private static final int FILE_PICKER = 100;
+    private static final int MAX_BROWSER_STATE_BYTES = 256 * 1024;
     private static final float[] PRESETS = {1, 1.25f, 1.5f, 2, 2.5f, 3, 3.5f, 4, 5};
     private static final Set<String> ORIGINS = new HashSet<>(Arrays.asList(
             "https://bilibili.com", "https://*.bilibili.com"));
@@ -83,6 +85,7 @@ public class MainActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Map<JavaScriptReplyProxy, FrameState> frameStates = new LinkedHashMap<>();
     private final ArrayList<Button> presetButtons = new ArrayList<>();
+    private final Set<WebView> popupWindows = new HashSet<>();
     private SharedPreferences preferences;
     private AppUpdater updater;
     private FrameLayout root;
@@ -109,6 +112,7 @@ public class MainActivity extends Activity {
     private boolean foreground;
     private boolean destroyed;
     private boolean failedNavigation;
+    private boolean keepingScreenOn;
     private int previousOrientation;
     private long lastBlockedMessage;
 
@@ -167,9 +171,14 @@ public class MainActivity extends Activity {
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                     android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::goBack);
         }
-        if (savedInstanceState == null || browser.restoreState(savedInstanceState) == null) {
+        Bundle browserState = savedInstanceState == null ? null : savedInstanceState.getBundle("browserState");
+        if (browserState == null) browserState = savedInstanceState;
+        if (browserState == null || browser.restoreState(browserState) == null) {
             String shared = sharedUrl(getIntent());
-            browser.loadUrl(shared != null ? mobileUrl(shared) : desktop ? "https://www.bilibili.com/" : HOME);
+            String previous = savedInstanceState == null ? null : savedInstanceState.getString("currentUrl");
+            String start = shared != null ? shared : isHttps(previous) && previous.length() <= 8192 ? previous
+                    : desktop ? "https://www.bilibili.com/" : HOME;
+            browser.loadUrl(mobileUrl(start));
         }
         updateFloatingLabel();
     }
@@ -304,12 +313,16 @@ public class MainActivity extends Activity {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             WebViewCompat.addWebMessageListener(browser, "BiliSpeedBridge", ORIGINS,
                     (view, message, sourceOrigin, isMainFrame, replyProxy) -> {
-                if (!isBiliHttps(sourceOrigin.toString()) || !foreground) return;
+                if (destroyed || !isBiliHttps(sourceOrigin.toString())) return;
                 try {
                     String payload = message.getData();
                     if (payload == null || payload.length() > 2048) return;
                     JSONObject data = new JSONObject(payload);
                     if (!"state".equals(data.optString("type"))) return;
+                    if (!foreground) {
+                        if (!data.optBoolean("suspended")) replyProxy.postMessage(configMessage());
+                        return;
+                    }
                     boolean fresh = !frameStates.containsKey(replyProxy);
                     FrameState state = new FrameState();
                     state.value = data;
@@ -373,8 +386,11 @@ public class MainActivity extends Activity {
                 if (!isUserGesture) return false;
                 // A short-lived WebView resolves target=_blank without allowing app popups.
                 WebView popup = new WebView(MainActivity.this);
+                popupWindows.add(popup);
                 java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
-                Runnable close = () -> { if (closed.compareAndSet(false, true)) popup.destroy(); };
+                Runnable close = () -> {
+                    if (closed.compareAndSet(false, true) && popupWindows.remove(popup)) popup.destroy();
+                };
                 popup.setWebViewClient(new WebViewClient() {
                     @Override public boolean shouldOverrideUrlLoading(WebView ignored, WebResourceRequest request) {
                         String url = request.getUrl().toString();
@@ -410,16 +426,30 @@ public class MainActivity extends Activity {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return;
         if (documentScript != null) documentScript.remove();
         documentScript = WebViewCompat.addDocumentStartJavaScript(browser,
-                "window.__BILI_SPEED_INITIAL__=" + selectedRate + ";\n" + injection, ORIGINS);
+                controllerInitialState() + injection, ORIGINS);
+    }
+
+    private String controllerInitialState() {
+        return "window.__BILI_SPEED_INITIAL__=" + selectedRate + ";window.__BILI_SPEED_SUSPENDED__="
+                + !foreground + ";\n";
     }
 
     private void injectIntoPage() {
         if (destroyed || !isBiliHttps(browser.getUrl())) return;
-        browser.evaluateJavascript("window.__BILI_SPEED_INITIAL__=" + selectedRate + ";\n" + injection
-                + "\nwindow.__BiliSpeed && window.__BiliSpeed.setRate(" + selectedRate + ");", null);
+        browser.evaluateJavascript(controllerInitialState() + injection
+                + "\nwindow.__BiliSpeed && window.__BiliSpeed.configure(" + configMessage() + ");", null);
     }
 
-    private String configMessage() { return "{\"type\":\"config\",\"rate\":" + selectedRate + "}"; }
+    private String configMessage() {
+        return "{\"type\":\"config\",\"rate\":" + selectedRate + ",\"suspended\":" + !foreground + "}";
+    }
+
+    private void configureFrames() {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return;
+        for (JavaScriptReplyProxy proxy : new ArrayList<>(frameStates.keySet())) {
+            if (proxy != null) { try { proxy.postMessage(configMessage()); } catch (Exception ignored) { } }
+        }
+    }
 
     static boolean validRate(float rate) { return Float.isFinite(rate) && rate >= 0.25f && rate <= 5; }
 
@@ -428,11 +458,7 @@ public class MainActivity extends Activity {
         selectedRate = Math.round(rate * 100) / 100f;
         if (preferences.getBoolean("remember", true)) preferences.edit().putFloat("rate", selectedRate).apply();
         updateDocumentScript();
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
-            for (JavaScriptReplyProxy proxy : new ArrayList<>(frameStates.keySet())) {
-                if (proxy != null) { try { proxy.postMessage(configMessage()); } catch (Exception ignored) { } }
-            }
-        }
+        configureFrames();
         injectIntoPage();
         updateFloatingLabel();
         updatePanelSelection();
@@ -461,15 +487,23 @@ public class MainActivity extends Activity {
                 applied &= Math.abs(data.optDouble("rate", 1) - selectedRate) < 0.01;
             }
         }
-        if (playing && foreground) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        setKeepingScreenOn(playing && foreground);
         if (statusText != null) {
-            if (live) statusText.setText("直播保持 1x；倍速将用于普通视频");
-            else if (ready && applied) statusText.setText("已应用 " + formatRate(selectedRate) + " · " + (playing ? "正在播放" : "视频已就绪"));
-            else if (ready) statusText.setText("正在应用 " + formatRate(selectedRate) + "…");
-            else if (hasVideo) statusText.setText("已选择 " + formatRate(selectedRate) + "，视频加载后生效");
-            else statusText.setText("已选择 " + formatRate(selectedRate) + "，打开视频后自动生效");
+            String status;
+            if (live) status = "直播保持 1x；倍速将用于普通视频";
+            else if (ready && applied) status = "已应用 " + formatRate(selectedRate) + " · " + (playing ? "正在播放" : "视频已就绪");
+            else if (ready) status = "正在应用 " + formatRate(selectedRate) + "…";
+            else if (hasVideo) status = "已选择 " + formatRate(selectedRate) + "，视频加载后生效";
+            else status = "已选择 " + formatRate(selectedRate) + "，打开视频后自动生效";
+            if (!status.contentEquals(statusText.getText())) statusText.setText(status);
         }
+    }
+
+    private void setKeepingScreenOn(boolean enabled) {
+        if (keepingScreenOn == enabled) return;
+        keepingScreenOn = enabled;
+        if (enabled) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 
     void openSpeedPanel() {
@@ -657,7 +691,7 @@ public class MainActivity extends Activity {
                                 + "也可输入 0.25–5x 的自定义速度。\n\n"
                                 + "这是个人第三方浏览器，使用B站官方网页。部分功能仅在官方App内提供。"
                                 + "会员和付费内容仍需相应账号权限。\n\n"
-                                + "菜单可检查更新；启动检查每天最多一次，安装需在系统中确认。")
+                                + "菜单可检查更新；成功检查后 24 小时内不重复，安装需在系统中确认。")
                         .setPositiveButton("知道了", null).show(); break;
             }
         }).show();
@@ -667,17 +701,15 @@ public class MainActivity extends Activity {
         EditText input = new EditText(this);
         input.setSingleLine();
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        input.setHint("粘贴B站链接或 BV 号");
+        input.setHint("粘贴链接、分享文本或 BV 号");
         LinearLayout holder = new LinearLayout(this);
         holder.setPadding(dp(20), dp(10), dp(20), 0);
         holder.addView(input, new LinearLayout.LayoutParams(-1, -2));
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle("打开链接").setView(holder)
                 .setNegativeButton("取消", null).setPositiveButton("打开", null).create();
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
-            String value = input.getText().toString().trim();
-            if (value.matches("BV[0-9A-Za-z]{10}")) value = HOME + "video/" + value;
-            if (!value.contains("://")) value = "https://" + value;
-            if (!isHttps(value)) { input.setError("请输入 HTTPS 网页链接或 BV 号"); return; }
+            String value = resolveUrlInput(input.getText().toString());
+            if (value == null) { input.setError("请输入网页链接、分享文本或 BV 号"); return; }
             browser.loadUrl(mobileUrl(value));
             dialog.dismiss();
         }));
@@ -744,14 +776,18 @@ public class MainActivity extends Activity {
     static boolean isBiliHttps(String url) {
         if (!isHttps(url)) return false;
         String host = Uri.parse(url).getHost().toLowerCase(Locale.ROOT);
-        return host.equals("bilibili.com") || host.endsWith(".bilibili.com");
+        int port = Uri.parse(url).getPort();
+        return (port == -1 || port == 443) && (host.equals("bilibili.com") || host.endsWith(".bilibili.com"));
     }
 
     static boolean isHttps(String url) {
         if (url == null) return false;
-        Uri uri = Uri.parse(url);
-        return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null
-                && !uri.getHost().isEmpty() && uri.getUserInfo() == null;
+        try {
+            java.net.URI uri = new java.net.URI(url);
+            return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null
+                    && !uri.getHost().isEmpty() && uri.getUserInfo() == null
+                    && (uri.getPort() == -1 || (uri.getPort() > 0 && uri.getPort() <= 65535));
+        } catch (java.net.URISyntaxException exception) { return false; }
     }
 
     private void applyUserAgent() {
@@ -768,10 +804,27 @@ public class MainActivity extends Activity {
 
     private String sharedUrl(Intent intent) {
         if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) return null;
-        String value = intent.getStringExtra(Intent.EXTRA_TEXT);
-        if (value == null) return null;
-        Matcher matcher = Pattern.compile("https://[^\\s<>\"，。]+", Pattern.CASE_INSENSITIVE).matcher(value);
-        if (matcher.find() && isHttps(matcher.group())) return matcher.group();
+        return resolveUrlInput(intent.getStringExtra(Intent.EXTRA_TEXT));
+    }
+
+    static String resolveUrlInput(String text) {
+        if (text == null || text.length() > 16384) return null;
+        String value = text.trim();
+        if (value.isEmpty()) return null;
+        Matcher link = Pattern.compile("https?://[^\\s<>\"，。！？【】]+", Pattern.CASE_INSENSITIVE).matcher(value);
+        if (link.find()) {
+            // A complete URL may legitimately end in a bracket or punctuation.
+            if (link.start() == 0 && link.end() == value.length() && isHttps(value)) return value;
+            String url = link.group();
+            while (!url.isEmpty() && ")）]}，。,;；!！?？".indexOf(url.charAt(url.length() - 1)) >= 0) {
+                url = url.substring(0, url.length() - 1);
+            }
+            if (url.regionMatches(true, 0, "http://", 0, 7)) url = "https://" + url.substring(7);
+            return isHttps(url) ? url : null;
+        }
+        Matcher bv = Pattern.compile("(?<![0-9A-Za-z])BV[0-9A-Za-z]{10}(?![0-9A-Za-z])").matcher(value);
+        if (bv.find()) return HOME + "video/" + bv.group();
+        if (!value.contains(":") && isHttps("https://" + value)) return "https://" + value;
         return null;
     }
 
@@ -864,7 +917,12 @@ public class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         foreground = true;
-        if (browser != null) { browser.onResume(); injectIntoPage(); }
+        if (browser != null) {
+            updateDocumentScript();
+            browser.onResume();
+            injectIntoPage();
+            configureFrames();
+        }
         handler.removeCallbacks(heartbeat);
         handler.post(heartbeat);
         if (updater != null) updater.onResume();
@@ -874,20 +932,27 @@ public class MainActivity extends Activity {
         foreground = false;
         handler.removeCallbacks(heartbeat);
         if (browser != null) {
-            if (isBiliHttps(browser.getUrl())) browser.evaluateJavascript("window.__BiliSpeed && window.__BiliSpeed.pause();", null);
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
-                for (JavaScriptReplyProxy proxy : frameStates.keySet()) {
-                    if (proxy != null) { try { proxy.postMessage("{\"type\":\"pause\"}"); } catch (Exception ignored) { } }
-                }
-            }
+            updateDocumentScript();
+            injectIntoPage();
+            configureFrames();
             browser.onPause();
             CookieManager.getInstance().flush();
         }
-        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        setKeepingScreenOn(false);
         super.onPause();
     }
     @Override protected void onSaveInstanceState(Bundle state) {
-        browser.saveState(state);
+        Bundle browserState = new Bundle();
+        browser.saveState(browserState);
+        Parcel parcel = Parcel.obtain();
+        try {
+            parcel.writeBundle(browserState);
+            // Android shares a 1 MB Binder buffer across activity transactions.
+            // Large URLs or histories must not crash the app when it stops.
+            if (parcel.dataSize() <= MAX_BROWSER_STATE_BYTES) state.putBundle("browserState", browserState);
+        } finally { parcel.recycle(); }
+        String url = browser.getUrl();
+        if (isHttps(url) && url.length() <= 8192) state.putString("currentUrl", url);
         state.putFloat("selectedRate", selectedRate);
         super.onSaveInstanceState(state);
     }
@@ -906,6 +971,8 @@ public class MainActivity extends Activity {
         exitFullscreen();
         if (uploadCallback != null) uploadCallback.onReceiveValue(null);
         if (documentScript != null && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) documentScript.remove();
+        for (WebView popup : popupWindows) popup.destroy();
+        popupWindows.clear();
         frameStates.clear();
         root.removeView(browser);
         browser.stopLoading();

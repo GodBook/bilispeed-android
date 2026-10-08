@@ -29,6 +29,7 @@ import java.util.concurrent.Executors;
 /** Native-only update flow. Web pages cannot request a download or installation. */
 final class AppUpdater {
     private static final long CHECK_INTERVAL = 24L * 60 * 60 * 1000;
+    private static final long RETRY_INTERVAL = 15L * 60 * 1000;
     private final Activity activity;
     private final SharedPreferences preferences;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -43,6 +44,13 @@ final class AppUpdater {
     private boolean resumed;
     private volatile boolean cancelled;
     private volatile boolean closed;
+    private final Runnable automaticCheck = this::checkAutomatically;
+
+    private void checkAutomatically() {
+        if (resumed && !closed && !BuildConfig.DEBUG && automaticEnabled() && pending == null
+                && automaticCheckDue(System.currentTimeMillis(), preferences.getLong("last_check", 0),
+                preferences.getLong("last_attempt", 0))) check(false);
+    }
 
     AppUpdater(Activity activity) {
         this.activity = activity;
@@ -63,6 +71,8 @@ final class AppUpdater {
                 preferences.edit().remove("pending").remove("awaiting_permission").apply();
             }
         }
+        File retained = pending == null ? null : apk(pending);
+        worker.execute(() -> cleanupFiles(folder, retained));
     }
 
     String menuLabel() {
@@ -77,11 +87,12 @@ final class AppUpdater {
     void toggleAutomatic() {
         boolean enabled = !automaticEnabled();
         preferences.edit().putBoolean("automatic", enabled).apply();
-        toast(enabled ? "启动时会检查更新，每天最多一次" : "已关闭启动时检查，可在菜单手动检查");
+        toast(enabled ? "启动时会检查更新，成功后间隔 24 小时" : "已关闭启动时检查，可在菜单手动检查");
     }
 
     void onResume() {
         resumed = true;
+        main.removeCallbacks(automaticCheck);
         if (preferences.getBoolean("awaiting_permission", false)) {
             preferences.edit().remove("awaiting_permission").apply();
             if (activity.getPackageManager().canRequestPackageInstalls() && pending != null) {
@@ -91,15 +102,18 @@ final class AppUpdater {
             }
             return;
         }
-        main.postDelayed(() -> {
-            if (resumed && !closed && !BuildConfig.DEBUG && automaticEnabled() && pending == null) {
-                long age = System.currentTimeMillis() - preferences.getLong("last_check", 0);
-                if (age < 0 || age >= CHECK_INTERVAL) check(false);
-            }
-        }, 5000);
+        main.postDelayed(automaticCheck, 5000);
     }
 
-    void onPause() { resumed = false; }
+    void onPause() {
+        resumed = false;
+        main.removeCallbacks(automaticCheck);
+    }
+
+    static boolean automaticCheckDue(long now, long lastSuccess, long lastAttempt) {
+        return (lastSuccess == 0 || now < lastSuccess || now - lastSuccess >= CHECK_INTERVAL)
+                && (lastAttempt == 0 || now < lastAttempt || now - lastAttempt >= RETRY_INTERVAL);
+    }
 
     void checkManually() {
         if (busy) {
@@ -115,11 +129,12 @@ final class AppUpdater {
         if (busy || closed) return;
         busy = true;
         manualCheck = manual;
-        preferences.edit().putLong("last_check", System.currentTimeMillis()).apply();
+        cancelled = false;
+        preferences.edit().putLong("last_attempt", System.currentTimeMillis()).apply();
         if (manual) {
             operationDialog = new AlertDialog.Builder(activity).setTitle("检查更新")
-                    .setMessage("正在连接 GitHub…").setNegativeButton("取消", (dialog, which) -> manualCheck = false)
-                    .setOnCancelListener(dialog -> manualCheck = false).show();
+                    .setMessage("正在连接 GitHub…").setNegativeButton("取消", (dialog, which) -> cancelCheck())
+                    .setOnCancelListener(dialog -> cancelCheck()).show();
         }
         worker.execute(() -> {
             try {
@@ -127,6 +142,8 @@ final class AppUpdater {
                 deliver(() -> {
                     busy = false;
                     dismissOperation();
+                    if (cancelled) { manualCheck = false; return; }
+                    preferences.edit().putLong("last_check", System.currentTimeMillis()).apply();
                     available = release.newerThan(BuildConfig.VERSION_CODE) ? release : null;
                     if (manualCheck && resumed) {
                         if (available != null) showRelease(release);
@@ -148,6 +165,12 @@ final class AppUpdater {
                 });
             }
         });
+    }
+
+    private void cancelCheck() {
+        manualCheck = false;
+        cancelled = true;
+        client.cancel();
     }
 
     private void showRelease(ReleaseInfo release) {
@@ -213,10 +236,12 @@ final class AppUpdater {
                 if (destination.exists() && !destination.delete()) throw new IOException("无法替换旧的更新包");
                 if (!partial.renameTo(destination)) throw new IOException("无法保存更新包");
                 preferences.edit().putString("pending", release.json).apply();
+                cleanupFiles(folder, destination);
                 deliver(() -> {
                     busy = false;
                     pending = release;
                     dismissOperation();
+                    if (cancelled) return;
                     if (resumed) offerInstall(release);
                     else toast("更新已下载，可从菜单安装");
                 });
@@ -252,7 +277,7 @@ final class AppUpdater {
                 });
             } catch (Exception exception) {
                 apk(release).delete();
-                preferences.edit().remove("pending").apply();
+                preferences.edit().remove("pending").remove("awaiting_permission").apply();
                 deliver(() -> {
                     pending = null;
                     busy = false;
@@ -295,6 +320,17 @@ final class AppUpdater {
     }
 
     private File apk(ReleaseInfo release) { return new File(folder, "update-" + release.versionCode + ".apk"); }
+
+    static void cleanupFiles(File folder, File retained) {
+        File[] files = folder.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            if (file.isFile() && !file.equals(retained)
+                    && (file.getName().equals("downloading.apk") || file.getName().matches("update-[0-9]+\\.apk"))) {
+                file.delete();
+            }
+        }
+    }
 
     private void failure(String title, Exception exception) {
         String detail = exception.getMessage();

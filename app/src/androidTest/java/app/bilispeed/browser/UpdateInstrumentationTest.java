@@ -12,6 +12,15 @@ import org.junit.Test;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.io.InterruptedIOException;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.security.cert.Certificate;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import javax.net.ssl.HttpsURLConnection;
 
 import static org.junit.Assert.*;
 
@@ -113,5 +122,103 @@ public class UpdateInstrumentationTest {
         assertEquals(intent.getData(), intent.getClipData().getItemAt(0).getUri());
         assertThrows(IllegalArgumentException.class, () -> FileProvider.getUriForFile(context,
                 context.getPackageName() + ".updates", new File(context.getFilesDir(), "private-account.json")));
+    }
+
+    @Test public void automaticChecksRetryFailuresWithoutRepeatingSuccessfulDailyChecks() {
+        long now = 30L * 24 * 60 * 60 * 1000;
+        long day = 24L * 60 * 60 * 1000;
+        long retry = 15L * 60 * 1000;
+        assertTrue(AppUpdater.automaticCheckDue(now, 0, 0));
+        assertFalse(AppUpdater.automaticCheckDue(now, now - day + 1, 0));
+        assertTrue(AppUpdater.automaticCheckDue(now, now - day, now - retry));
+        assertFalse(AppUpdater.automaticCheckDue(now, 0, now - retry + 1));
+        assertTrue(AppUpdater.automaticCheckDue(now, 0, now - retry));
+        assertTrue(AppUpdater.automaticCheckDue(now, now + day, now + retry));
+    }
+
+    @Test public void cleanupKeepsPendingApkAndOnlyRemovesManagedUpdateFiles() throws Exception {
+        File folder = new File(context.getCacheDir(), "update-cleanup-test");
+        assertTrue(folder.isDirectory() || folder.mkdir());
+        File retained = new File(folder, "update-8.apk");
+        File obsolete = new File(folder, "update-7.apk");
+        File partial = new File(folder, "downloading.apk");
+        File unrelated = new File(folder, "personal-file.txt");
+        File directory = new File(folder, "update-6.apk");
+        try {
+            retained.createNewFile(); obsolete.createNewFile(); partial.createNewFile(); unrelated.createNewFile();
+            assertTrue(directory.isDirectory() || directory.mkdir());
+            AppUpdater.cleanupFiles(folder, retained);
+            assertTrue(retained.isFile());
+            assertFalse(obsolete.exists());
+            assertFalse(partial.exists());
+            assertTrue(unrelated.isFile());
+            assertTrue(directory.isDirectory());
+        } finally {
+            for (File file : new File[] {retained, obsolete, partial, unrelated, directory}) file.delete();
+            folder.delete();
+        }
+    }
+
+    @Test public void cancellingRedirectStopsRequestAndAllowsTheNextCheck() throws Exception {
+        byte[] manifest = manifest(installedApk()).toString().getBytes(StandardCharsets.UTF_8);
+        AtomicInteger requests = new AtomicInteger();
+        AtomicReference<UpdateClient> holder = new AtomicReference<>();
+        UpdateClient client = new UpdateClient(BuildConfig.UPDATE_REPOSITORY, url -> {
+            if (requests.incrementAndGet() == 1) {
+                return new FakeConnection(url, 302, new byte[0], () -> holder.get().cancel());
+            }
+            return new FakeConnection(url, 200, manifest, null);
+        });
+        holder.set(client);
+        assertThrows(InterruptedIOException.class, client::latest);
+        assertEquals("Cancellation must stop before connecting to the redirect", 1, requests.get());
+        assertEquals(BuildConfig.VERSION_CODE, client.latest().versionCode);
+        assertEquals(2, requests.get());
+    }
+
+    @Test public void cancellingDownloadStopsProgressAndRemovesPartialFile() throws Exception {
+        byte[] content = new byte[65536];
+        ReleaseInfo release = parse(manifest(installedApk()).put("size", content.length));
+        AtomicInteger requests = new AtomicInteger();
+        UpdateClient client = new UpdateClient(BuildConfig.UPDATE_REPOSITORY, url -> {
+            requests.incrementAndGet();
+            return new FakeConnection(url, 200, content, null);
+        });
+        File partial = new File(context.getCacheDir(), "cancelled-update-test.apk");
+        AtomicInteger chunks = new AtomicInteger();
+        try {
+            assertThrows(InterruptedIOException.class, () -> client.download(release, partial, new UpdateClient.Progress() {
+                @Override public boolean cancelled() { return false; }
+                @Override public void received(long bytes, long total) { chunks.incrementAndGet(); client.cancel(); }
+            }));
+            assertEquals(1, chunks.get());
+            assertFalse(partial.exists());
+            assertThrows(InterruptedIOException.class, () -> client.download(release, partial, new UpdateClient.Progress() {
+                @Override public boolean cancelled() { return true; }
+                @Override public void received(long bytes, long total) { fail("Cancelled download reported progress"); }
+            }));
+            assertEquals("An already cancelled download must not connect", 1, requests.get());
+        } finally { partial.delete(); }
+    }
+
+    private static final class FakeConnection extends HttpsURLConnection {
+        private final int status;
+        private final byte[] body;
+        private final Runnable onResponse;
+        FakeConnection(URL url, int status, byte[] body, Runnable onResponse) {
+            super(url); this.status = status; this.body = body; this.onResponse = onResponse;
+        }
+        @Override public int getResponseCode() { if (onResponse != null) onResponse.run(); return status; }
+        @Override public String getHeaderField(String name) {
+            return "Location".equals(name) ? "https://release-assets.githubusercontent.com/test" : null;
+        }
+        @Override public long getContentLengthLong() { return body.length; }
+        @Override public InputStream getInputStream() { return new ByteArrayInputStream(body); }
+        @Override public void connect() { }
+        @Override public void disconnect() { }
+        @Override public boolean usingProxy() { return false; }
+        @Override public String getCipherSuite() { return "TLS_AES_128_GCM_SHA256"; }
+        @Override public Certificate[] getLocalCertificates() { return null; }
+        @Override public Certificate[] getServerCertificates() { return new Certificate[0]; }
     }
 }

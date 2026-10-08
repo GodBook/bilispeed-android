@@ -7,7 +7,12 @@
     let lastReport = '';
     let lastSent = 0;
     let scheduled = false;
+    let suspended = !!window.__BILI_SPEED_SUSPENDED__;
+    let heartbeatTimer = null;
     const videos = new Set();
+    const pendingRoots = new Set();
+    const managedFrames = new Set();
+    const observers = new Map();
     const bound = new WeakSet();
     const roots = new WeakSet();
     const frames = new WeakSet();
@@ -27,7 +32,7 @@
         // and displays an app-launch poster. Use the site's existing web-player layout.
         if (!document.querySelector('.video-share .m-video-player')) return;
         const changed = !document.documentElement.hasAttribute(attribute);
-        document.documentElement.setAttribute(attribute, '');
+        if (changed) document.documentElement.setAttribute(attribute, '');
         if (!document.getElementById('bilispeed-mobile-player-style') && document.head) {
             const style = document.createElement('style');
             style.id = 'bilispeed-mobile-player-style';
@@ -60,7 +65,8 @@
                 });
                 player.appendChild(button);
             }
-            button.style.display = video.paused || video.ended ? 'block' : 'none';
+            const display = video.paused || video.ended ? 'block' : 'none';
+            if (button.style.display !== display) button.style.display = display;
         });
     }
 
@@ -84,6 +90,7 @@
             }
             video.preservesPitch = true;
             if ('webkitPreservesPitch' in video) video.webkitPreservesPitch = true;
+            if (suspended && !video.paused) video.pause();
         } catch (_) {
             // The snapshot reports the actual rate if a particular player rejects it.
         }
@@ -109,6 +116,14 @@
     guard('playbackRate', rateDescriptor);
     guard('defaultPlaybackRate', defaultDescriptor);
 
+    const play = prototype.play;
+    prototype.play = function () {
+        if (this.tagName === 'VIDEO' && suspended) {
+            return Promise.reject(new DOMException('Playback is paused while the app is in the background', 'AbortError'));
+        }
+        return play.apply(this, arguments);
+    };
+
     function snapshot() {
         const present = Array.from(videos).filter(video => video.isConnected);
         const playable = present.filter(video => video.readyState >= 1 && !video.error);
@@ -121,7 +136,8 @@
             live: !!active && isLive(active),
             rate: active ? active.playbackRate : wanted,
             selected: wanted,
-            version: 1
+            suspended,
+            version: 2
         };
     }
 
@@ -146,6 +162,7 @@
                 video.addEventListener(name, function () {
                     apply(video);
                     report(true);
+                    scheduleReport();
                 }, { passive: true });
             });
         }
@@ -161,31 +178,40 @@
     }
 
     function sendToFrames(message) {
-        document.querySelectorAll('iframe').forEach(frame => {
+        managedFrames.forEach(frame => {
+            if (!frame.isConnected) { managedFrames.delete(frame); return; }
+            try {
+                // Older WebViews can still control a same-origin child without a bridge.
+                if (frame.contentWindow.__BiliSpeed) {
+                    if (message.type === 'config') frame.contentWindow.__BiliSpeed.configure(message);
+                    if (message.type === 'pause') frame.contentWindow.__BiliSpeed.pause();
+                    return;
+                }
+            } catch (_) { }
             try {
                 const origin = new URL(frame.src || location.href, location.href).origin;
                 if (trustedOrigin(origin)) frame.contentWindow.postMessage(message, origin);
-                // Older WebViews can still control a same-origin child without a bridge.
-                if (frame.contentWindow.__BiliSpeed) {
-                    if (message.type === 'config') frame.contentWindow.__BiliSpeed.setRate(message.rate);
-                    if (message.type === 'pause') frame.contentWindow.__BiliSpeed.pause();
-                }
-            } catch (_) {}
+            } catch (_) { }
         });
     }
 
+    function frameConfig() { return { type: 'config', rate: wanted, suspended }; }
+
+    function bindFrame(frame) {
+        managedFrames.add(frame);
+        if (frames.has(frame)) return;
+        frames.add(frame);
+        frame.addEventListener('load', () => sendToFrames(frameConfig()));
+    }
+
     function discover(root) {
-        if (!root) return;
-        showMobileWebPlayer();
+        if (!root || ![1, 9, 11].includes(root.nodeType)) return;
         if (root.tagName === 'VIDEO') bind(root);
+        if (root.tagName === 'IFRAME') bindFrame(root);
         if (root.querySelectorAll) {
-            root.querySelectorAll('video').forEach(bind);
-            root.querySelectorAll('iframe').forEach(frame => {
-                if (frames.has(frame)) return;
-                frames.add(frame);
-                frame.addEventListener('load', () => sendToFrames({ type: 'config', rate: wanted }));
-            });
             root.querySelectorAll('*').forEach(element => {
+                if (element.tagName === 'VIDEO') bind(element);
+                if (element.tagName === 'IFRAME') bindFrame(element);
                 if (element.shadowRoot) watch(element.shadowRoot);
             });
         }
@@ -193,13 +219,35 @@
     }
 
     function watch(root) {
+        discover(root);
         if (roots.has(root)) return;
         roots.add(root);
-        discover(root);
-        new MutationObserver(records => {
-            records.forEach(record => record.addedNodes.forEach(discover));
+        // Native autoplay does not call the JavaScript play() method.
+        root.addEventListener('play', blockBackgroundPlay, true);
+        const observer = new MutationObserver(records => {
+            records.forEach(record => record.addedNodes.forEach(node => {
+                if (node.nodeType === 1 || node.nodeType === 11) pendingRoots.add(node);
+            }));
             scheduleReport();
-        }).observe(root, { childList: true, subtree: true });
+        });
+        observer.observe(root, { childList: true, subtree: true });
+        observers.set(root, observer);
+    }
+
+    function blockBackgroundPlay(event) {
+        if (suspended && event.target.tagName === 'VIDEO') event.target.pause();
+    }
+
+    function prune() {
+        videos.forEach(video => { if (!video.isConnected) videos.delete(video); });
+        managedFrames.forEach(frame => { if (!frame.isConnected) managedFrames.delete(frame); });
+        observers.forEach((observer, root) => {
+            if (root.host && !root.host.isConnected) {
+                observer.disconnect();
+                observers.delete(root);
+                roots.delete(root);
+            }
+        });
     }
 
     function scheduleReport() {
@@ -207,7 +255,17 @@
         scheduled = true;
         setTimeout(() => {
             scheduled = false;
-            videos.forEach(video => { if (!video.isConnected) videos.delete(video); });
+            pendingRoots.forEach(root => {
+                if (!root.isConnected) return;
+                // An ancestor already covers this subtree; scan it only once per batch.
+                for (let parent = root.parentNode; parent; parent = parent.parentNode) {
+                    if (pendingRoots.has(parent)) return;
+                }
+                discover(root);
+            });
+            pendingRoots.clear();
+            showMobileWebPlayer();
+            prune();
             report(false);
         }, 100);
     }
@@ -227,24 +285,55 @@
         if (!valid(number)) return false;
         wanted = Math.round(number * 100) / 100;
         videos.forEach(apply);
-        sendToFrames({ type: 'config', rate: wanted });
+        sendToFrames(frameConfig());
         report(true);
         return true;
     }
 
-    function pause() {
-        videos.forEach(video => { try { video.pause(); } catch (_) {} });
-        sendToFrames({ type: 'pause' });
+    function configure(message) {
+        if (typeof message.suspended === 'boolean') suspended = message.suspended;
+        if (suspended) stopHeartbeat(); else scheduleHeartbeat();
+        return setRate(message.rate);
     }
 
-    const api = Object.freeze({ setRate, snapshot, pause });
+    function pause() {
+        suspended = true;
+        stopHeartbeat();
+        videos.forEach(video => { try { video.pause(); } catch (_) {} });
+        sendToFrames({ type: 'pause' });
+        report(true);
+    }
+
+    function resume() {
+        configure({ rate: wanted, suspended: false });
+    }
+
+    function stopHeartbeat() {
+        if (heartbeatTimer !== null) clearTimeout(heartbeatTimer);
+        heartbeatTimer = null;
+    }
+
+    function scheduleHeartbeat() {
+        if (heartbeatTimer !== null || suspended) return;
+        heartbeatTimer = setTimeout(() => {
+            heartbeatTimer = null;
+            if (suspended) return;
+            showMobileWebPlayer();
+            prune();
+            videos.forEach(apply);
+            report(false);
+            scheduleHeartbeat();
+        }, videos.size ? 1500 : 3000);
+    }
+
+    const api = Object.freeze({ setRate, configure, snapshot, pause, resume });
     Object.defineProperty(window, '__BiliSpeed', { value: api, configurable: false });
 
     if (window.BiliSpeedBridge) {
         window.BiliSpeedBridge.onmessage = event => {
             try {
                 const message = JSON.parse(event.data);
-                if (message.type === 'config') setRate(message.rate);
+                if (message.type === 'config') configure(message);
                 if (message.type === 'pause') pause();
             } catch (_) {}
         };
@@ -252,21 +341,20 @@
 
     window.addEventListener('message', event => {
         if (event.source !== window.parent || window.parent === window || !trustedOrigin(event.origin)) return;
-        if (event.data && event.data.type === 'config') setRate(event.data.rate);
+        if (event.data && event.data.type === 'config') configure(event.data);
         if (event.data && event.data.type === 'pause') pause();
     });
 
     watch(document);
-    document.addEventListener('DOMContentLoaded', () => { discover(document); report(true); }, { once: true });
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) report(true); });
-    window.addEventListener('pageshow', () => { videos.forEach(apply); report(true); });
-    setInterval(() => {
-        showMobileWebPlayer();
-        videos.forEach(video => {
-            if (video.isConnected) apply(video);
-            else videos.delete(video);
-        });
-        report(false);
-    }, 750);
+    document.addEventListener('DOMContentLoaded', scheduleReport, { once: true });
+    document.addEventListener('visibilitychange', () => {
+        // WebView can be hidden while its custom fullscreen video is still visible.
+        // Only the native activity's suspended state stops the heartbeat.
+        scheduleHeartbeat();
+        if (!document.hidden) report(true);
+    });
+    window.addEventListener('pageshow', () => { videos.forEach(apply); scheduleHeartbeat(); report(true); });
+    scheduleReport();
+    scheduleHeartbeat();
     report(true);
 })();
