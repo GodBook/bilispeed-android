@@ -16,7 +16,9 @@
 
 测试设备为 x86_64 模拟器，720 × 1600、density 300，使用宿主 GPU 并关闭 Vulkan。原环境出现解码停滞、软件图形后端系统卡顿及 System UI 无响应弹窗，已通过日志与界面检查定位；没有降低倍速测量断言。未连接实体手机，也未使用真实用户账号验证登录。
 
-优化说明与后续优先级见 OPTIMIZATION.md。发布后的真实 GitHub 更新下载和签名检查另行记录。
+优化说明与后续优先级见 OPTIMIZATION.md。
+
+发布后已确认 GitHub 最新正式版本为 v1.1.1，APK、update.json 和 SHA256SUMS.txt 三个附件齐全，GitHub 的文件摘要与本机构建一致。Android 上读取正式更新信息、实际下载 APK 并验证哈希、版本、包名和原签名：OK (1 test)，结果为 artifacts/published-update-test-1.1.1.txt。初次直接连接遇到 TLS 中断，使用能够访问 GitHub 的测试代理后通过；全程保留系统证书校验。
 
 ## 1.1.0：在线更新
 
