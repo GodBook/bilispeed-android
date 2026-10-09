@@ -22,6 +22,8 @@
     let hideTimer = null;
     let feedbackTimer = null;
     let suppressClickUntil = 0;
+    let pendingTap = null;
+    let appearance = window.__BILI_BUTTON_APPEARANCE__ || { size: 100, opacity: 100 };
     let subtitleRoot = null;
     let suspended = !!window.__BILI_SPEED_SUSPENDED__;
     const subtitleObserver = new MutationObserver(() => {
@@ -54,6 +56,12 @@ html[data-bilispeed-touch] #bilispeed-touch-controls button {
 html[data-bilispeed-touch] #bilispeed-touch-controls button[aria-pressed="true"] { color: #ff91b2; }
 html[data-bilispeed-touch] #bilispeed-touch-controls :focus-visible { outline: 2px solid #ff91b2; outline-offset: -2px; }
 html[data-bilispeed-touch] #bilispeed-touch-controls :disabled { opacity: .45; }
+html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="subtitles"] {
+    min-width: max(44px, calc(44px * var(--bilispeed-subtitle-size, 1)));
+    min-height: max(44px, calc(44px * var(--bilispeed-subtitle-size, 1)));
+    font-size: calc(13px * var(--bilispeed-subtitle-size, 1));
+    opacity: var(--bilispeed-subtitle-opacity, 1);
+}
 html[data-bilispeed-touch] #bilispeed-touch-controls input[type="range"] {
     min-width: 0; height: 28px; margin: 0; accent-color: #e8557f; touch-action: none;
 }
@@ -81,12 +89,12 @@ html[data-bilispeed-touch] #bilispeed-seek-feedback {
     color: #fff; background: rgba(0, 0, 0, .76); font: 14px sans-serif; text-align: center; pointer-events: none;
 }
 html[data-bilispeed-touch] [data-bilispeed-player][data-controls-visible] .bpx-player-subtitle-wrap {
-    transform: translateY(-72px);
+    transform: translateY(calc(-1 * var(--bilispeed-controls-height, 72px)));
 }
 html[data-bilispeed-touch][data-bilispeed-fullscreen] .bpx-player-sending-area,
 html[data-bilispeed-touch][data-bilispeed-fullscreen] .bpx-player-sending-bar { display: none !important; }
 html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilispeed-player-panel {
-    bottom: calc(100% + 4px); max-height: min(260px, calc(var(--bilispeed-player-height, 100vh) - 100px));
+    bottom: calc(100% + 4px); max-height: min(260px, calc(var(--bilispeed-player-height, 100vh) - var(--bilispeed-controls-height, 84px) - 16px));
 }
 html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player,
 html[data-bilispeed-touch] .bpx-player-container:fullscreen,
@@ -175,7 +183,8 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
     }
 
     function cancelPreview() {
-        if (gesture && gesture.seeking) suppressClickUntil = Date.now() + 800;
+        if (gesture || pendingTap) suppressClickUntil = Date.now() + 800;
+        cancelTap();
         gesture = null;
         progressVideo = null;
         preview = null;
@@ -188,12 +197,79 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         catch (_) { showFeedback('暂时无法跳转，请稍后重试', 1500); return false; }
     }
 
+    function setAppearance(value) {
+        appearance = value || { size: 100, opacity: 100 };
+        if (!document.documentElement) return;
+        const size = Number(appearance.size), opacity = Number(appearance.opacity);
+        const styles = document.documentElement.style;
+        let changed = false;
+        [['--bilispeed-subtitle-size', String(Number.isFinite(size) ? Math.max(.7, Math.min(1.5, size / 100)) : 1)],
+            ['--bilispeed-subtitle-opacity', String(Number.isFinite(opacity) ? Math.max(.2, Math.min(1, opacity / 100)) : 1)]].forEach(([key, text]) => {
+            if (styles.getPropertyValue(key) !== text) { styles.setProperty(key, text); changed = true; }
+        });
+        if (changed && controls) updateLayout();
+    }
+
+    function cancelTap() {
+        if (pendingTap) clearTimeout(pendingTap.timer);
+        pendingTap = null;
+    }
+
+    function inputTime(event) {
+        const time = Number(event.timeStamp);
+        return Number.isFinite(time) && time > 0 ? time : performance.now();
+    }
+
+    function togglePlayback(withFeedback) {
+        const active = currentVideo();
+        if (!active || suspended) return;
+        if (active.paused || active.ended) {
+            active.play().then(() => {
+                if (withFeedback && active === video && !suspended) showFeedback('继续播放', 900);
+            }).catch(() => { update(); if (withFeedback && !suspended) showFeedback('暂时无法播放，请重试', 1500); });
+        } else {
+            active.pause();
+            if (withFeedback) showFeedback('已暂停', 900);
+        }
+        if (withFeedback) showControls();
+        else scheduleHide();
+    }
+
+    function singleTap() {
+        if (!controls || suspended) return;
+        if (panel) { closePanel(); showControls(); }
+        else if (!fullscreen || controls.dataset.hidden === 'true') showControls();
+        else setVisible(false);
+    }
+
+    function surfaceTap(x, y, at) {
+        const active = currentVideo();
+        if (!active || suspended) return;
+        const previous = pendingTap;
+        if (previous && previous.video === active && previous.source === active.currentSrc
+                && at >= previous.at && at - previous.at <= 340 && Math.hypot(x - previous.x, y - previous.y) <= 32) {
+            cancelTap();
+            togglePlayback(true);
+            return;
+        }
+        if (previous) { cancelTap(); if (!previous.handled) singleTap(); }
+        const tap = { video: active, source: active.currentSrc, host, at, x, y, handled: false, timer: null };
+        tap.timer = setTimeout(() => {
+            if (pendingTap !== tap) return;
+            // Keep one timestamp after the single-tap action so a queued second
+            // contact can still match while video decoding delays JS dispatch.
+            tap.handled = true;
+            if (host === tap.host && currentVideo() === tap.video && tap.video.currentSrc === tap.source) singleTap();
+        }, 340);
+        pendingTap = tap;
+    }
+
     function button(name, label, action) {
         const element = document.createElement('button');
         element.type = 'button';
         element.dataset.bilispeedControl = name;
         element.textContent = label;
-        element.addEventListener('click', event => { event.preventDefault(); action(); });
+        element.addEventListener('click', event => { event.preventDefault(); cancelTap(); action(); });
         return element;
     }
 
@@ -267,7 +343,8 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         ['click', 'dblclick', 'pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchmove', 'touchend'].forEach(name => {
             controls.addEventListener(name, event => event.stopPropagation());
         });
-        controls.addEventListener('pointerdown', () => { keyboardInteraction = false; interacting = true; showControls(); });
+        controls.addEventListener('pointerdown', () => { cancelTap(); keyboardInteraction = false; interacting = true; showControls(); });
+        controls.addEventListener('touchstart', cancelTap, { passive: true });
         controls.addEventListener('keydown', event => {
             keyboardInteraction = true;
             showControls();
@@ -289,13 +366,7 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
             progressVideo = null; preview = null; update(); scheduleHide();
         });
         range.addEventListener('pointercancel', () => { cancelPreview(); update(); });
-        const play = button('play', '▶', () => {
-            const active = currentVideo();
-            if (!active) return;
-            if (active.paused || active.ended) active.play().catch(() => update());
-            else active.pause();
-            scheduleHide();
-        });
+        const play = button('play', '▶', () => togglePlayback(false));
         const time = document.createElement('span');
         time.dataset.bilispeedControl = 'time';
         const volume = button('volume', '音量', () => togglePanel('volume'));
@@ -352,22 +423,23 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
     }
 
     function ignoreTarget(target) {
-        return target instanceof Element && !!target.closest('#bilispeed-touch-controls, button, input, select, textarea, a, [role="button"], .bpx-player-control-wrap, .bpx-player-hinter-area, .bpx-player-ending-wrap');
+        return target instanceof Element && !!target.closest('#bilispeed-touch-controls, button, input, select, textarea, a, [role="button"], .bpx-player-control-wrap, .bpx-player-ending-wrap, .bpx-player-dm-setting, .bpx-player-dm-setting-wrap');
     }
 
     function bindHost(target) {
         if (managedHosts.has(target)) return;
         managedHosts.add(target);
         target.addEventListener('touchstart', event => {
-            if (target !== host) return;
+            if (target !== host || suspended) return;
             if (event.touches.length !== 1) { cancelPreview(); update(); return; }
-            if (ignoreTarget(event.target)) return;
+            if (ignoreTarget(event.target)) { cancelTap(); return; }
             // A new finger contact is an intentional tap, not the trailing click of a swipe.
             suppressClickUntil = 0;
-            if (!seekable(video)) return;
+            if (!video) return;
             const touch = event.touches[0];
             gesture = { id: touch.identifier, x: touch.clientX, y: touch.clientY, width: Math.max(1, host.getBoundingClientRect().width),
-                video, source: video.currentSrc, time: video.currentTime, duration: video.duration, seeking: false, vertical: false };
+                video, source: video.currentSrc, time: video.currentTime, duration: video.duration,
+                started: inputTime(event), moved: false, seeking: false, vertical: false };
         }, { capture: true, passive: true });
         target.addEventListener('touchmove', event => {
             if (target !== host || !gesture) return;
@@ -375,6 +447,8 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
             const touch = Array.from(event.touches).find(item => item.identifier === gesture.id);
             if (!touch || gesture.vertical) return;
             const dx = touch.clientX - gesture.x, dy = touch.clientY - gesture.y;
+            if (Math.hypot(dx, dy) >= 10) { gesture.moved = true; cancelTap(); }
+            if (!seekable(gesture.video)) return;
             if (!gesture.seeking) {
                 if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
                 if (Math.abs(dy) > Math.abs(dx) * 1.2) { gesture.vertical = true; return; }
@@ -399,6 +473,16 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
                 if (completed.video.currentSrc === completed.source && preview !== null) seek(completed.video, preview);
                 clearTimeout(feedbackTimer);
                 feedbackTimer = setTimeout(() => { feedback.hidden = true; }, 600);
+            } else if (!completed.moved && !completed.vertical && inputTime(event) - completed.started <= 250
+                    && currentVideo() === completed.video && completed.video.currentSrc === completed.source) {
+                // Consume both the touch and its compatibility click so the
+                // official player cannot toggle again or enter fullscreen.
+                event.preventDefault(); event.stopImmediatePropagation();
+                suppressClickUntil = Date.now() + 800;
+                surfaceTap(completed.x, completed.y, inputTime(event));
+            } else {
+                cancelTap();
+                suppressClickUntil = Date.now() + 800;
             }
             gesture = null; preview = null; update(); scheduleHide();
         }, { capture: true, passive: false });
@@ -406,10 +490,11 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         target.addEventListener('click', event => {
             if (target !== host || ignoreTarget(event.target)) return;
             if (Date.now() < suppressClickUntil) { event.preventDefault(); event.stopImmediatePropagation(); return; }
-            if (!fullscreen) return;
             event.preventDefault(); event.stopImmediatePropagation();
-            if (controls.dataset.hidden === 'true') showControls();
-            else { closePanel(); setVisible(false); }
+            surfaceTap(event.clientX, event.clientY, inputTime(event));
+        }, true);
+        target.addEventListener('dblclick', event => {
+            if (target === host && !ignoreTarget(event.target)) { event.preventDefault(); event.stopImmediatePropagation(); }
         }, true);
     }
 
@@ -430,6 +515,10 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         if (host) {
             const value = host.clientHeight + 'px';
             if (host.style.getPropertyValue('--bilispeed-player-height') !== value) host.style.setProperty('--bilispeed-player-height', value);
+            if (controls) {
+                const height = controls.offsetHeight + 'px';
+                if (host.style.getPropertyValue('--bilispeed-controls-height') !== height) host.style.setProperty('--bilispeed-controls-height', height);
+            }
         }
     }
 
@@ -468,6 +557,7 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
 
     function refresh() {
         if (suspended || !document.head) return;
+        setAppearance(appearance);
         if (!document.getElementById('bilispeed-player-style')) {
             const style = document.createElement('style');
             style.id = 'bilispeed-player-style'; style.textContent = stylesheet; document.head.appendChild(style);
@@ -525,7 +615,7 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         } else { refresh(); scheduleHide(); }
     }
     Object.defineProperty(window, '__BiliTouchPlayer', { value: Object.freeze({ refresh,
-        setSuspended,
+        setSuspended, setAppearance,
         setFullscreen(value) { nativeFullscreen = !!value; update(); }
     }), configurable: false });
     window.addEventListener('pointerup', finishInteraction, true);
@@ -538,5 +628,6 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
     document.addEventListener('fullscreenchange', () => { update(); updateLayout(); });
     document.addEventListener('webkitfullscreenchange', () => { update(); updateLayout(); });
     document.addEventListener('DOMContentLoaded', refresh, { once: true });
+    setAppearance(appearance);
     refresh();
 })();

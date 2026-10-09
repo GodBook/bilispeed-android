@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">B站倍速浏览器</string>
+    <string name="button_size_percent">大小 %1$d%%</string>
+    <string name="button_opacity_percent">不透明度 %1$d%%</string>
 </resources>

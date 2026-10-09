@@ -1,12 +1,15 @@
 package app.bilispeed.browser;
 
 import android.app.Instrumentation;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.os.SystemClock;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
+import android.widget.SeekBar;
+import android.graphics.Bitmap;
 
 import androidx.test.platform.app.InstrumentationRegistry;
 
@@ -18,6 +21,8 @@ import org.junit.Test;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.io.File;
+import java.io.FileOutputStream;
 
 import static org.junit.Assert.*;
 
@@ -100,6 +105,29 @@ public class DesktopLayoutInstrumentationTest {
             }
         }
         return null;
+    }
+
+    private SeekBar slider(View root, String description) {
+        if (root instanceof SeekBar && description.contentEquals(root.getContentDescription())) return (SeekBar) root;
+        if (root instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) root;
+            for (int index = 0; index < group.getChildCount(); index++) {
+                SeekBar result = slider(group.getChildAt(index), description);
+                if (result != null) return result;
+            }
+        }
+        return null;
+    }
+
+    private void screenshot(String name) throws Exception {
+        instrumentation.waitForIdleSync();
+        SystemClock.sleep(350);
+        Bitmap bitmap = instrumentation.getUiAutomation().takeScreenshot();
+        assertNotNull(bitmap);
+        File file = new File(instrumentation.getTargetContext().getExternalFilesDir(null), name + ".png");
+        try (FileOutputStream output = new FileOutputStream(file)) { assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)); }
+        finally { bitmap.recycle(); }
+        System.out.println("BILISPEED_SCREENSHOT=" + file.getAbsolutePath());
     }
 
     @Test public void mobileLinksAndSearchStayOnDesktopWithQueryAndFragment() {
@@ -186,5 +214,95 @@ public class DesktopLayoutInstrumentationTest {
         js("document.querySelector('[data-section=\".video-pod-above-modules\"]').click();true");
         assertEquals("collection", js("window.sectionViewed"));
         assertEquals(1, ((Number) js("document.querySelectorAll('#bilispeed-video-tabs').length")).intValue());
+    }
+
+    @Test public void buttonAppearancePreviewsPersistsAndRestoresDefaults() throws Exception {
+        fixture(true);
+        await("document.querySelector('[data-bilispeed-control=subtitles]')");
+        instrumentation.runOnMainSync(activity::showButtonAppearance);
+        instrumentation.runOnMainSync(() -> {
+            View panel = activity.appearanceDialogForTesting().getWindow().getDecorView();
+            for (String title : new String[]{"三点按钮", "倍速按钮", "字幕按钮"}) {
+                SeekBar size = slider(panel, title + "大小");
+                SeekBar opacity = slider(panel, title + "不透明度");
+                assertNotNull(size); assertNotNull(opacity);
+                size.setProgress(16); // 150%
+                opacity.setProgress(6); // 50% opacity
+            }
+            System.out.println("BILISPEED_APPEARANCE_URL=" + activity.browserForTesting().getUrl());
+        });
+        System.out.println("BILISPEED_APPEARANCE_STATE=" + js("JSON.stringify({initial:window.__BILI_BUTTON_APPEARANCE__,"
+                + "size:document.documentElement.style.getPropertyValue('--bilispeed-subtitle-size'),"
+                + "opacity:document.documentElement.style.getPropertyValue('--bilispeed-subtitle-opacity'),"
+                + "computed:getComputedStyle(document.querySelector('[data-bilispeed-control=subtitles]')).opacity})"));
+        screenshot("BiliSpeed-button-appearance");
+        await("getComputedStyle(document.querySelector('[data-bilispeed-control=subtitles]')).opacity==='0.5'");
+        assertEquals(19.5, ((Number) js("parseFloat(getComputedStyle(document.querySelector('[data-bilispeed-control=subtitles]')).fontSize)")).doubleValue(), .1);
+        instrumentation.runOnMainSync(() -> { activity.appearanceDialogForTesting().dismiss(); activity.finish(); });
+        instrumentation.waitForIdleSync();
+        activity = start();
+        fixture(true);
+        await("document.querySelector('[data-bilispeed-control=subtitles]')");
+        assertEquals("0.5", js("getComputedStyle(document.querySelector('[data-bilispeed-control=subtitles]')).opacity"));
+        assertTrue((Boolean) js("document.querySelector('[data-bilispeed-control=subtitles]').getBoundingClientRect().right<=innerWidth"));
+        instrumentation.runOnMainSync(() -> {
+            TextView menu = label(activity.getWindow().getDecorView(), "···");
+            TextView speed = label(activity.getWindow().getDecorView(), "3.5x  倍速");
+            assertNotNull(menu); assertNotNull(speed);
+            assertEquals(.5f, menu.getAlpha(), .001f); assertEquals(.5f, speed.getAlpha(), .001f);
+            float density = activity.getResources().getDisplayMetrics().density;
+            assertEquals(66 * density, menu.getWidth(), 2);
+            assertEquals(138 * density, speed.getWidth(), 2);
+            int[] location = new int[2]; speed.getLocationOnScreen(location);
+            assertTrue(location[0] + speed.getWidth() <= activity.getWindow().getDecorView().getWidth());
+        });
+        instrumentation.runOnMainSync(activity::showButtonAppearance);
+        instrumentation.runOnMainSync(() -> ((AlertDialog) activity.appearanceDialogForTesting())
+                .getButton(AlertDialog.BUTTON_NEUTRAL).performClick());
+        await("getComputedStyle(document.querySelector('[data-bilispeed-control=subtitles]')).opacity==='1'");
+        instrumentation.runOnMainSync(() -> {
+            for (String target : new String[]{"menu", "speed", "subtitle"}) {
+                assertEquals(100, instrumentation.getTargetContext().getSharedPreferences("playback", Context.MODE_PRIVATE).getInt(target + "_size", 0));
+                assertEquals(100, instrumentation.getTargetContext().getSharedPreferences("playback", Context.MODE_PRIVATE).getInt(target + "_opacity", 0));
+            }
+            activity.appearanceDialogForTesting().dismiss();
+        });
+    }
+
+    @Test public void accountSidebarBecomesScrollableTabsAndProfileFitsPhone() throws Exception {
+        String html = "<!doctype html><meta name='viewport' content='width=1100'>"
+                + "<style>body{min-width:1100px;margin:0}.security_content{width:980px;display:flex;margin:10px auto 100px;overflow:hidden}"
+                + ".top-img{width:980px;height:106px;background:#00a1d7}.security-left{width:150px;height:100%;overflow:hidden}"
+                + ".security-list{width:150px;height:48px;line-height:48px}.security-right{flex:1;min-height:890px}"
+                + ".secuity-right-home{width:789px;padding:50px 20px 0}.home-right{width:684px;display:inline-block;margin-left:16px}"
+                + ".home-head{width:64px;height:64px;display:inline-block;background:#eee}.home-top-level-all{width:684px}"
+                + ".home-top-level-up{width:280px}.home-dialy-exp-item{width:186px;display:inline-block}"
+                + ".el-form-item__label{float:left;width:95px}.el-form-item__content{margin-left:95px}.el-input{width:225px}"
+                + "a{color:#222}ul{padding:0;margin:0;list-style:none}input{box-sizing:border-box;width:100%;height:44px}"
+                + "</style><div id='account-app'><div class='top-img'></div><div class='security_content'>"
+                + "<div class='security-left'><span class='security-title'>个人中心</span><ul>"
+                + "<li class='security-list'><a href='#home'>首页</a></li><li class='security-list'><a href='#vip'>大会员</a></li>"
+                + "<li class='security-list'><a href='#info' id='profile-tab' onclick='window.profileViewed=true'>我的信息</a></li>"
+                + "<li class='security-list'><a href='#face'>我的头像</a></li><li class='security-list'><a href='#fans'>粉丝勋章</a></li>"
+                + "<li class='security-list'><a href='#safe'>账号安全</a></li></ul></div>"
+                + "<div class='security-right'><div class='secuity-right-home'><div class='index-info'><div class='home-head'></div>"
+                + "<div class='home-right'><h2 class='home-top-msg-name'>bili_32004312345678901234567890</h2>"
+                + "<div class='home-top-level-all'>LV0<div class='home-top-level-up'>经验进度</div></div></div></div>"
+                + "<div class='home-daily-task-warp'><h3>每日奖励</h3><div class='home-dialy-exp-item'>每日登录</div>"
+                + "<div class='home-dialy-exp-item'>观看视频</div></div><form class='user-setting-warp'><div class='el-form-item'>"
+                + "<label class='el-form-item__label'>昵称</label><div class='el-form-item__content'><div class='el-input'>"
+                + "<input id='nickname' value='测试账号'></div></div></div></form></div></div></div></div>";
+        instrumentation.runOnMainSync(() -> {
+            activity.browserForTesting().stopLoading();
+            activity.browserForTesting().loadDataWithBaseURL("https://account.bilibili.com/account/home", html, "text/html", "UTF-8", null);
+        });
+        await("document.documentElement.dataset.bilispeedPage==='account' && document.querySelector('.security-left')");
+        assertTrue((Boolean) js("['.security_content','.security-right','.home-right','.home-top-msg-name','#nickname'].every(function(s){"
+                + "var r=document.querySelector(s).getBoundingClientRect();return r.width>50&&r.left>=0&&r.right<=innerWidth+1;})"));
+        assertTrue((Boolean) js("document.querySelector('.security-left').scrollWidth>document.querySelector('.security-left').clientWidth"));
+        assertTrue((Boolean) js("document.querySelector('.security-right').getBoundingClientRect().top>=document.querySelector('.security-left').getBoundingClientRect().bottom"));
+        js("document.getElementById('profile-tab').click();document.getElementById('nickname').value='新昵称';true");
+        assertTrue((Boolean) js("window.profileViewed && document.getElementById('nickname').value==='新昵称'"));
+        screenshot("BiliSpeed-account-mobile");
     }
 }

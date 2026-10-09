@@ -46,7 +46,9 @@ public class OfficialBilibiliSmokeTest {
                 + "state:window.__BiliSpeed&&window.__BiliSpeed.snapshot(),hidden:document.hidden,focus:document.hasFocus(),"
                 + "videos:Array.from(document.querySelectorAll('video')).map(function(v){return {paused:v.paused,time:v.currentTime,"
                 + "ready:v.readyState,duration:v.duration,error:v.error&&v.error.code};}),"
+                + "tapTrace:window.liveTapTrace,"
                 + "body:document.body?document.body.innerText.slice(0,350):''})"));
+        screenshot("BiliSpeed-live-failure");
         fail("Website condition timed out: " + condition);
     }
 
@@ -60,12 +62,16 @@ public class OfficialBilibiliSmokeTest {
     }
 
     private void tapElement(String selector) throws Exception {
+        tapElement(selector, .5);
+    }
+
+    private void tapElement(String selector, double fraction) throws Exception {
         js("document.querySelector('" + selector + "').scrollIntoView({block:'center'}); true");
         instrumentation.runOnMainSync(() -> activity.browserForTesting().requestFocus());
         SystemClock.sleep(200);
         JSONObject point = new JSONObject((String) js("JSON.stringify((function(){"
                 + "var r=document.querySelector('" + selector + "').getBoundingClientRect();"
-                + "return {x:r.left+r.width/2,y:r.top+r.height/2,width:innerWidth};})())"));
+                + "return {x:r.left+r.width*" + fraction + ",y:r.top+r.height/2,width:innerWidth};})())"));
         int[] position = new int[2];
         float[] scale = new float[1];
         instrumentation.runOnMainSync(() -> {
@@ -115,6 +121,32 @@ public class OfficialBilibiliSmokeTest {
             event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
             assertTrue(instrumentation.getUiAutomation().injectInputEvent(event, true));
             event.recycle(); SystemClock.sleep(40);
+        }
+    }
+
+    private void doubleTapPlayer() throws Exception {
+        js("document.querySelector('.bpx-player-video-area').scrollIntoView({block:'center'});true");
+        SystemClock.sleep(200);
+        JSONObject point = new JSONObject((String) js("JSON.stringify((function(){var r=document.querySelector('.bpx-player-video-area').getBoundingClientRect();"
+                + "return {x:r.left+r.width*.5,y:r.top+r.height*.3,width:innerWidth};})())"));
+        int[] position = new int[2];
+        float[] scale = new float[1];
+        instrumentation.runOnMainSync(() -> {
+            activity.browserForTesting().getLocationOnScreen(position);
+            scale[0] = (float) (activity.browserForTesting().getWidth() / point.optDouble("width"));
+        });
+        float x = position[0] + (float) point.getDouble("x") * scale[0];
+        float y = position[1] + (float) point.getDouble("y") * scale[0];
+        for (int tap = 0; tap < 2; tap++) {
+            long start = SystemClock.uptimeMillis();
+            MotionEvent down = PlayerControlsInstrumentationTest.fingerInput(start, start, MotionEvent.ACTION_DOWN, x, y);
+            // Queue the contacts at finger speed; waiting for each rendered frame
+            // makes a 5x live video turn this into two separate single taps.
+            assertTrue(instrumentation.getUiAutomation().injectInputEvent(down, false)); down.recycle();
+            SystemClock.sleep(65);
+            MotionEvent up = PlayerControlsInstrumentationTest.fingerInput(start, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, x, y);
+            assertTrue(instrumentation.getUiAutomation().injectInputEvent(up, false)); up.recycle();
+            SystemClock.sleep(65);
         }
     }
 
@@ -200,8 +232,8 @@ public class OfficialBilibiliSmokeTest {
             await("document.querySelector('video') && document.querySelector('video').readyState >= 2", 35);
             instrumentation.runOnMainSync(() -> activity.selectRate(5));
             await("document.querySelector('video').playbackRate === 5", 5);
-            // Some site layouts mount the player on the first tap, then show its play control.
-            if (Boolean.TRUE.equals(js("document.querySelector('video').paused"))) tapPlayer();
+            // After mounting the official player, start via the explicit touch control.
+            if (Boolean.TRUE.equals(js("document.querySelector('video').paused"))) tapElement("[data-bilispeed-control=play]");
             await("!document.querySelector('video').paused && document.querySelector('video').currentTime > 1", 15);
             System.out.println("BILISPEED_LIVE_VIDEO=" + js("JSON.stringify(window.__BiliSpeed.snapshot())"));
             System.out.println("BILISPEED_LIVE_LAYOUT=" + js("JSON.stringify({viewport:innerWidth,width:document.documentElement.scrollWidth,"
@@ -239,6 +271,36 @@ public class OfficialBilibiliSmokeTest {
                 assertTrue((Boolean) js("/暂无可用字幕|登录后/.test(document.getElementById('bilispeed-player-panel').textContent)"));
                 tapElement("[data-bilispeed-control=close-panel]");
             }
+            js("window.liveTapTrace=[];['touchstart','touchend','click','dblclick','pointerup','resize','play','pause'].forEach(function(name){"
+                    + "window.addEventListener(name,function(e){var t=e.target,r={type:e.type,target:t.id||t.className,"
+                    + "ignored:t.closest&&!!t.closest('button,input,a,[role=button],.bpx-player-control-wrap,.bpx-player-ending-wrap,.bpx-player-dm-setting'),"
+                    + "at:Date.now(),timestamp:e.timeStamp,paused:document.querySelector('video').paused,x:e.changedTouches&&e.changedTouches[0]&&e.changedTouches[0].clientX,"
+                    + "y:e.changedTouches&&e.changedTouches[0]&&e.changedTouches[0].clientY};liveTapTrace.push(r);"
+                    + "setTimeout(function(){r.prevented=e.defaultPrevented;},0);},true);});true");
+            doubleTapPlayer();
+            await("!document.querySelector('video').paused", 5);
+            doubleTapPlayer();
+            await("document.querySelector('video').paused", 5);
+            assertFalse("Touch double-tap must not trigger official fullscreen", (Boolean) js("!!document.fullscreenElement"));
+            screenshot("BiliSpeed-live-double-tap");
+            tapElement(".bpx-player-dm-setting");
+            System.out.println("BILISPEED_LIVE_DANMAKU=" + js("JSON.stringify((function(){var w=document.querySelector('.bpx-player-dm-setting-wrap');"
+                    + "return {html:w&&w.outerHTML.slice(0,2000),bounds:w&&w.getBoundingClientRect().toJSON(),display:w&&getComputedStyle(w).display};})())"));
+            await("document.querySelector('.bpx-player-dm-setting-wrap').checkVisibility()", 5);
+            assertTrue("Official danmaku panel must fit the phone", (Boolean) js("(function(){var r=document.querySelector('.bpx-player-dm-setting-wrap').getBoundingClientRect();"
+                    + "return r.left>=0&&r.right<=innerWidth+1&&r.top>=0&&r.bottom<=innerHeight+1;})()"));
+            screenshot("BiliSpeed-live-danmaku-settings");
+            js("window._danmakuOpacityBefore=document.querySelector('.bpx-player-dm-setting-left-opacity').innerText;true");
+            // The official slider persists between visits. Pick a different
+            // value so a second test run still proves that native input works.
+            double opacityTarget = Boolean.TRUE.equals(js("parseFloat(window._danmakuOpacityBefore.match(/[0-9]+%/)[0])<50")) ? .75 : .25;
+            tapElement(".bpx-player-dm-setting-left-opacity .bui-progress-wrap", opacityTarget);
+            await("document.querySelector('.bpx-player-dm-setting-left-opacity').innerText!==window._danmakuOpacityBefore", 5);
+            tapElement(".bpx-player-dm-setting-left-more");
+            await("document.querySelector('.bpx-player-dm-setting-right').checkVisibility()", 5);
+            screenshot("BiliSpeed-live-danmaku-advanced");
+            tapElement("[data-bilispeed-control=danmaku-close]");
+            await("!document.querySelector('.bpx-player-dm-setting-wrap').checkVisibility()", 5);
             js("window._beforeSwipe=document.querySelector('video').currentTime;true");
             swipePlayer();
             await("document.querySelector('video').currentTime>window._beforeSwipe+5", 10);

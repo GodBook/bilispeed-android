@@ -227,6 +227,149 @@ public class PlayerControlsInstrumentationTest {
         assertTrue((Boolean) js("document.getElementById('bilispeed-seek-feedback').hidden"));
     }
 
+    private void doubleTap() throws Exception {
+        float[] location = point(HOST, .5, .3);
+        for (int tap = 0; tap < 2; tap++) {
+            long start = SystemClock.uptimeMillis();
+            MotionEvent down = fingerInput(start, start, MotionEvent.ACTION_DOWN, location[0], location[1]);
+            assertTrue(instrumentation.getUiAutomation().injectInputEvent(down, false)); down.recycle();
+            SystemClock.sleep(50);
+            MotionEvent up = fingerInput(start, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, location[0], location[1]);
+            assertTrue(instrumentation.getUiAutomation().injectInputEvent(up, false)); up.recycle();
+            SystemClock.sleep(50);
+        }
+    }
+
+    @Test public void realDoubleTapTogglesOnceAndSingleTapDoesNotPause() throws Exception {
+        js("v.loop=true;var overlay=document.createElement('div');overlay.className='bpx-player-hinter-area';"
+                + "overlay.style.cssText='position:absolute;inset:0;z-index:1';document.querySelector('" + HOST + "').append(overlay);"
+                + "window.officialClicks=0;['click','dblclick'].forEach(function(name){"
+                + "document.querySelector('" + HOST + "').addEventListener(name,function(){officialClicks++;v.paused?v.play():v.pause();});});true");
+        doubleTap();
+        await("!v.paused && document.getElementById('bilispeed-seek-feedback').textContent==='继续播放'");
+        SystemClock.sleep(420);
+        tap(HOST);
+        SystemClock.sleep(420);
+        assertFalse((Boolean) js("v.paused"));
+        doubleTap();
+        await("v.paused && document.getElementById('bilispeed-seek-feedback').textContent==='已暂停'");
+        assertEquals("Do not let official click handlers toggle a second time", 0, ((Number) js("officialClicks")).intValue());
+        assertFalse((Boolean) js("!!document.fullscreenElement"));
+        screenshot("BiliSpeed-double-tap-paused");
+    }
+
+    @Test public void doubleTapWorksWithHiddenFullscreenControls() throws Exception {
+        tap("[data-bilispeed-control=fullscreen]");
+        await("document.fullscreenElement && innerWidth>innerHeight && " + CONTROLS + ".dataset.hidden==='true'");
+        dismissImmersiveHint(instrumentation);
+        js("v.loop=true;true");
+        doubleTap();
+        await("!v.paused && " + CONTROLS + ".dataset.hidden==='false'");
+        SystemClock.sleep(3400);
+        await(CONTROLS + ".dataset.hidden==='true'");
+        doubleTap();
+        await("v.paused && " + CONTROLS + ".dataset.hidden==='false'");
+        assertTrue((Boolean) js("!!document.fullscreenElement"));
+        screenshot("BiliSpeed-double-tap-fullscreen");
+    }
+
+    @Test public void largeSubtitleButtonKeepsFullscreenSettingsAndCaptionsInsidePlayer() throws Exception {
+        instrumentation.runOnMainSync(() -> instrumentation.getTargetContext().getSharedPreferences("playback", Context.MODE_PRIVATE)
+                .edit().putInt("subtitle_size", 150).putInt("subtitle_opacity", 30).commit());
+        js("var captions=document.createElement('div');captions.className='bpx-player-subtitle-wrap';"
+                + "captions.textContent='测试字幕';captions.style.cssText='position:absolute;bottom:12px;left:25%;width:50%;height:24px;color:white';"
+                + "document.querySelector('" + HOST + "').append(captions);"
+                + "window.__BiliTouchPlayer.setAppearance({size:150,opacity:30});true");
+        tap("[data-bilispeed-control=fullscreen]");
+        await("document.fullscreenElement && innerWidth>innerHeight && " + CONTROLS + ".dataset.hidden==='true'");
+        dismissImmersiveHint(instrumentation);
+        tap(HOST); await(CONTROLS + ".dataset.hidden==='false'");
+        click("volume");
+        assertEquals("0.3", js("getComputedStyle(document.querySelector('[data-bilispeed-control=subtitles]')).opacity"));
+        assertTrue((Boolean) js("(function(){var p=document.getElementById('bilispeed-player-panel').getBoundingClientRect(),"
+                + "c=document.querySelector('.bpx-player-subtitle-wrap').getBoundingClientRect(),bar=" + CONTROLS + ".getBoundingClientRect();"
+                + "return p.top>=0&&p.bottom<=innerHeight&&c.top>=0&&c.bottom<=bar.top&&p.right<=innerWidth;})()"));
+        screenshot("BiliSpeed-large-subtitle-fullscreen");
+    }
+
+    @Test public void distantMultifingerCancelledAndSwipedContactsDoNotDoubleTap() throws Exception {
+        js("touchEvent('touchstart',[[1,80,50]]);touchEvent('touchend',[]);"
+                + "touchEvent('touchstart',[[1,240,50]]);touchEvent('touchend',[]);true");
+        SystemClock.sleep(400);
+        assertTrue((Boolean) js("v.paused"));
+        js("touchEvent('touchstart',[[1,80,50]]);touchEvent('touchend',[]);"
+                + "touchEvent('touchstart',[[1,80,50],[2,100,50]]);touchEvent('touchend',[]);"
+                + "touchEvent('touchstart',[[1,80,50]]);touchEvent('touchend',[]);true");
+        SystemClock.sleep(400);
+        assertTrue((Boolean) js("v.paused"));
+        js("touchEvent('touchstart',[[1,80,50]]);touchEvent('touchend',[]);"
+                + "touchEvent('touchstart',[[1,80,50]]);touchEvent('touchcancel',[]);"
+                + "touchEvent('touchstart',[[1,80,50]]);touchEvent('touchend',[]);true");
+        SystemClock.sleep(400);
+        assertTrue((Boolean) js("v.paused"));
+        js("touchEvent('touchstart',[[1,80,50]]);touchEvent('touchend',[]);touchEvent('touchstart',[[1,80,50]]);true");
+        SystemClock.sleep(320);
+        js("touchEvent('touchend',[]);touchEvent('touchstart',[[1,80,50]]);touchEvent('touchend',[]);true");
+        SystemClock.sleep(400);
+        assertTrue((Boolean) js("v.paused"));
+        swipe(.3, .3, .6, .3);
+        tap(HOST);
+        SystemClock.sleep(400);
+        assertTrue((Boolean) js("v.paused"));
+        click("subtitles");
+        assertFalse((Boolean) js("document.getElementById('bilispeed-player-panel').hidden"));
+    }
+
+    @Test public void danmakuPopupFitsAndKeepsItsOfficialInputsUsable() throws Exception {
+        js("var sending=document.createElement('div');sending.className='bpx-player-sending-bar';"
+                + "sending.innerHTML=\"<div class='bpx-player-dm-setting'><div class='bpx-player-dm-setting-wrap'>"
+                + "<div class='bpx-player-dm-setting-box'><div class='bui-panel-wrap' style='width:320px;height:120px;overflow:hidden'>"
+                + "<div class='bui-panel-move' style='width:586px;transform:translateX(0px)'>"
+                + "<div class='bui-panel-item bui-panel-item-active' style='width:320px;height:120px'><div class='bpx-player-dm-setting-left'>"
+                + "<div class='bpx-player-dm-setting-left-radio'><label><input type='checkbox' id='dm-safe'>智能防挡弹幕</label></div>"
+                + "<div class='bpx-player-dm-setting-left-opacity'><span class='bpx-player-dm-setting-left-opacity-title'>不透明度</span>"
+                + "<div class='bpx-player-dm-setting-left-opacity-content'><input id='dm-opacity' type='range' value='53'></div></div>"
+                + "<button id='dm-more'>高级设置</button><p id='dm-tail' style='margin:30px 0'>弹幕速度</p>"
+                + "</div></div></div></div></div></div></div>\";"
+                + "document.getElementById('bilibili-player').append(sending);"
+                + "var style=document.createElement('style');style.textContent='.bpx-player-sending-bar{display:flex;align-items:center;height:46px}'"
+                + "+'.bpx-player-dm-setting{position:relative;width:32px;height:32px}'"
+                + "+'.bpx-player-dm-setting-wrap{width:320px;height:359px;position:absolute;bottom:46px;right:-149px}'"
+                + "+'.bpx-player-dm-setting-box{position:absolute;bottom:0;right:0;width:320px;height:359px;background:#242528;color:#fff}'"
+                + "+'.bpx-player-dm-setting-left{width:100%;height:100%;padding:12px 20px}'"
+                + "+'.bpx-player-dm-setting-left-opacity{display:flex;width:100%}'"
+                + "+'.bpx-player-dm-setting-left-opacity-title{width:61px}'"
+                + "+'.bpx-player-dm-setting-left-opacity-content{width:200px;margin-left:10px;flex:1}'"
+                + "+'#dm-opacity{width:200px;height:44px}';document.head.append(style);true");
+        await("document.querySelector('.bpx-player-dm-setting-wrap').getBoundingClientRect().width>200");
+        await("document.querySelector('[data-bilispeed-control=danmaku-close]')");
+        js("document.querySelector('.bpx-player-dm-setting').click();true");
+        System.out.println("BILISPEED_DANMAKU_BOUNDS=" + js("JSON.stringify(['.bpx-player-dm-setting-wrap','.bpx-player-dm-setting-box','#dm-opacity','#dm-safe'].map(function(s){"
+                + "var e=document.querySelector(s);return {s:s,bounds:e.getBoundingClientRect().toJSON(),style:getComputedStyle(e).cssText,width:innerWidth,height:innerHeight};}))"));
+        screenshot("BiliSpeed-danmaku-settings");
+        assertTrue((Boolean) js("['.bpx-player-dm-setting-wrap','.bpx-player-dm-setting-box','#dm-opacity','#dm-safe','#dm-tail'].every(function(s){"
+                + "var r=document.querySelector(s).getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})"));
+        tap("#dm-safe");
+        assertTrue((Boolean) js("document.getElementById('dm-safe').checked"));
+        assertTrue((Boolean) js("v.paused"));
+        js("window.dmCloseTrace=[];['touchstart','touchend','click'].forEach(function(name){document.addEventListener(name,function(e){"
+                + "dmCloseTrace.push({type:e.type,target:e.target.id||e.target.className,control:e.target.dataset&&e.target.dataset.bilispeedControl});},true);});"
+                + "var done=document.querySelector('[data-bilispeed-control=danmaku-close]'),r=done.getBoundingClientRect();"
+                + "window.dmCloseHit=document.elementFromPoint(r.left+r.width*.5,r.top+r.height*.3).outerHTML.slice(0,400);true");
+        tap("[data-bilispeed-control=danmaku-close]");
+        SystemClock.sleep(350);
+        boolean nativeClosed = (Boolean) js("!document.querySelector('.bpx-player-dm-setting-wrap').checkVisibility()");
+        System.out.println("BILISPEED_DANMAKU_CLOSE=" + js("JSON.stringify({trace:dmCloseTrace,hit:dmCloseHit,"
+                + "flags:document.querySelector('.bpx-player-dm-setting-wrap').outerHTML.slice(0,600)})"));
+        if (!nativeClosed) {
+            js("document.querySelector('[data-bilispeed-control=danmaku-close]').click();true");
+            System.out.println("BILISPEED_DANMAKU_PROGRAMMATIC_CLOSE=" + js("!document.querySelector('.bpx-player-dm-setting-wrap').checkVisibility()"));
+        }
+        assertTrue("Native touch must reach the danmaku close button", nativeClosed);
+        js("document.querySelector('.bpx-player-dm-setting').click();true");
+        assertTrue((Boolean) js("document.querySelector('.bpx-player-dm-setting-wrap').checkVisibility()"));
+    }
+
     @Test public void volumeSliderUnmutesAndMuteRestoresAudibleVolume() throws Exception {
         click("volume");
         js("var range=document.querySelector('[data-bilispeed-control=volume-slider]');range.value=37;range.dispatchEvent(new Event('input',{bubbles:true}));true");

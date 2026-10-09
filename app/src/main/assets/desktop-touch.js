@@ -10,11 +10,14 @@
     let refreshTimer = null;
     let suspended = !!window.__BILI_SPEED_SUSPENDED__;
     let previousPage = '';
-    const ownElements = '#bilispeed-touch-controls, #bilispeed-seek-feedback, #bilispeed-video-tabs, #bilispeed-touch-style, #bilispeed-player-style';
+    const managedDanmaku = new WeakSet();
+    const ownElements = '#bilispeed-touch-controls, #bilispeed-seek-feedback, #bilispeed-video-tabs, #bilispeed-touch-style, #bilispeed-player-style, [data-bilispeed-danmaku-header]';
     const transientPlayerElements = '.bpx-player-dm-wrap, .bpx-player-dm-container, .bpx-player-subtitle-wrap';
     const observation = { childList: true, subtree: true, attributes: true, attributeFilter: ['content'] };
     const stylesheet = `
 #bilispeed-touch-controls, #bilispeed-video-tabs { display: none; }
+html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-open] { display: block !important; }
+html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { display: none !important; }
 @media (max-width: 1000px) {
     html[${attribute}], html[${attribute}] body, html[${attribute}] #app {
         min-width: 0 !important; width: 100vw !important; max-width: 100vw !important; margin: 0 !important;
@@ -140,6 +143,60 @@
     html[${attribute}] #bilibili-player { width: 100% !important; height: 100% !important; }
     html[${attribute}] .bpx-player-container:not(.bpx-state-fullscreen):not(.bpx-state-web) { width: 100% !important; height: 100% !important; }
     html[${attribute}] .bpx-player-sending-bar { min-width: 0 !important; }
+    html[${attribute}] .bpx-player-sending-bar { padding: 0 8px !important; box-sizing: border-box; }
+    html[${attribute}] .bpx-player-sending-bar .bpx-player-video-info { display: none !important; }
+    html[${attribute}] .bpx-player-dm-input { flex: 1; min-width: 0 !important; width: auto !important; }
+    html[${attribute}] .bpx-player-dm-input input { min-width: 0 !important; width: 100% !important; }
+    /* The official popup is anchored outside its narrow desktop trigger. Keep
+       it in the viewport and preserve the site's own sliders and checkboxes. */
+    html[${attribute}] .bpx-player-dm-setting-wrap {
+        position: fixed !important; left: 8px !important; right: 8px !important; top: 8px !important; bottom: auto !important;
+        width: auto !important; height: auto !important; min-width: 0 !important; max-width: 420px !important; margin: 0 auto !important;
+        max-height: calc(100dvh - 24px) !important; overflow: auto !important; overscroll-behavior: contain;
+        transform: none !important; box-sizing: border-box !important; z-index: 100010 !important;
+    }
+    html[${attribute}] .bpx-player-dm-setting-wrap * { box-sizing: border-box; max-width: 100%; }
+    html[${attribute}] .bpx-player-dm-setting-wrap .bpx-player-dm-setting-box {
+        position: relative !important; width: 100% !important; height: auto !important; right: auto !important; bottom: auto !important;
+    }
+    html[${attribute}] .bpx-player-dm-setting-wrap :is(.bui-panel-wrap, .bui-panel-move) {
+        display: block !important; width: 100% !important; height: auto !important;
+        transform: none !important; margin-left: 0 !important; left: auto !important;
+    }
+    html[${attribute}] .bpx-player-dm-setting-wrap .bui-panel-item {
+        display: none !important; width: 100% !important; height: auto !important; float: none !important; position: relative !important;
+    }
+    html[${attribute}] .bpx-player-dm-setting-wrap .bui-panel-item-active { display: block !important; }
+    html[${attribute}] [data-bilispeed-danmaku-header] {
+        display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 2;
+        padding: 4px 12px; color: #fff; background: #202124; border-bottom: 1px solid #555;
+        font: 15px sans-serif; box-sizing: border-box;
+    }
+    html[${attribute}] [data-bilispeed-danmaku-header] button {
+        border: 0; border-radius: 6px; min-width: 52px; min-height: 44px; font: 14px sans-serif;
+        background: transparent; color: #ff91b2; touch-action: manipulation;
+    }
+    html[${attribute}] .bpx-player-dm-setting-wrap :is(.bpx-player-dm-setting-left, .bpx-player-dm-setting-right) {
+        width: 100% !important; height: auto !important; min-width: 0 !important; padding: 16px !important; white-space: normal !important;
+    }
+    html[${attribute}] .bpx-player-dm-setting-wrap .bpx-player-dm-setting-left-radio { flex-wrap: wrap; gap: 12px; }
+    html[${attribute}] .bpx-player-dm-setting-wrap .bpx-player-dm-setting-left-block-content {
+        flex-wrap: wrap; height: auto !important; overflow: visible !important; gap: 10px;
+    }
+    html[${attribute}] .bpx-player-dm-setting-wrap .bpx-player-block-filter-type { min-height: 44px; margin: 0 !important; }
+    html[${attribute}] .bpx-player-dm-setting-wrap .bpx-player-dm-setting-left-block-word { gap: 8px; }
+    html[${attribute}] .bpx-player-dm-setting-wrap :is(.bpx-player-dm-setting-left-block-add, .bpx-player-dm-setting-left-block-sync) { flex: 1; min-height: 36px; line-height: 36px; }
+    html[${attribute}] .bpx-player-dm-setting-wrap :is(.bpx-player-dm-setting-left-area, .bpx-player-dm-setting-left-fontsize, .bpx-player-dm-setting-left-opacity, .bpx-player-dm-setting-left-speedplus) {
+        min-width: 0 !important; min-height: 40px; height: auto !important; margin-bottom: 8px !important;
+    }
+    html[${attribute}] .bpx-player-dm-setting-wrap :is(.bpx-player-dm-setting-left-area-content, .bpx-player-dm-setting-left-fontsize-content, .bpx-player-dm-setting-left-opacity-content, .bpx-player-dm-setting-left-speedplus-content) {
+        flex: 1; width: 0 !important; min-width: 0 !important;
+    }
+    html[${attribute}] .bpx-player-dm-setting-wrap .bui-slider { width: 100% !important; min-width: 0 !important; }
+    html[${attribute}] .bpx-player-dm-setting-wrap input[type="range"] { min-width: 0 !important; max-width: 100%; }
+    html[${attribute}] .bpx-player-dm-setting-wrap .bpx-player-dm-setting-left-more {
+        top: 0 !important; padding-top: 0 !important; min-height: 44px; line-height: 44px;
+    }
     html[${attribute}] .bpx-player-video-info { display: none !important; }
     html[${attribute}] #bilispeed-video-tabs { display: flex; border-bottom: 1px solid #eee; }
     html[${attribute}] #bilispeed-video-tabs button {
@@ -193,6 +250,75 @@
     html[${attribute}] .bili-dyn-home--visitor > :not(.left):not(.right),
     html[${attribute}] .bili-dyn-list, html[${attribute}] .bili-dyn-item { width: 100% !important; min-width: 0 !important; box-sizing: border-box; }
 
+    /* Account pages use a 980px shell and a 150px sidebar on desktop. */
+    html[${attribute}][data-bilispeed-page="account"] #account-app,
+    html[${attribute}][data-bilispeed-page="account"] .security_content {
+        width: 100% !important; min-width: 0 !important; max-width: 100% !important; box-sizing: border-box;
+    }
+    html[${attribute}][data-bilispeed-page="account"] .top-img {
+        width: 100% !important; height: 72px !important; background-size: cover !important; background-position: center;
+    }
+    html[${attribute}][data-bilispeed-page="account"] .security_content {
+        display: flex !important; flex-direction: column !important; margin: 0 0 24px !important;
+        overflow: visible !important; border: 0 !important; box-shadow: none !important;
+    }
+    html[${attribute}][data-bilispeed-page="account"] .security-left {
+        width: 100% !important; height: auto !important; overflow-x: auto !important;
+        border-bottom: 1px solid #e5e9ef; overscroll-behavior-x: contain;
+    }
+    html[${attribute}][data-bilispeed-page="account"] .security-title { display: none !important; }
+    html[${attribute}][data-bilispeed-page="account"] .security-left ul { display: flex !important; width: max-content; }
+    html[${attribute}][data-bilispeed-page="account"] .security-list,
+    html[${attribute}][data-bilispeed-page="account"] .security-list-jump {
+        width: auto !important; flex: none !important; height: 48px !important; margin: 0 !important;
+        border: 0 !important; padding: 0 16px !important; line-height: 48px !important;
+    }
+    html[${attribute}][data-bilispeed-page="account"] .security-icon,
+    html[${attribute}][data-bilispeed-page="account"] .security-list-jump-icon { display: none !important; }
+    html[${attribute}][data-bilispeed-page="account"] .security-nav-name,
+    html[${attribute}][data-bilispeed-page="account"] .security-list-link-jump {
+        margin: 0 !important; white-space: nowrap; letter-spacing: normal !important; font-size: 14px !important; line-height: 48px !important;
+    }
+    html[${attribute}][data-bilispeed-page="account"] .security-right {
+        width: 100% !important; min-width: 0 !important; min-height: 0 !important; border: 0 !important; box-sizing: border-box;
+    }
+    html[${attribute}][data-bilispeed-page="account"] .security-right :is(div, section, form, ul, table) {
+        min-width: 0 !important; max-width: 100% !important; box-sizing: border-box;
+    }
+    html[${attribute}][data-bilispeed-page="account"] .secuity-right-home,
+    html[${attribute}][data-bilispeed-page="account"] .security-right > div {
+        width: 100% !important; padding: 20px 16px !important;
+    }
+    html[${attribute}][data-bilispeed-page="account"] .index-info { display: flex; gap: 12px; padding-bottom: 20px !important; }
+    html[${attribute}][data-bilispeed-page="account"] .home-head { flex: none; }
+    html[${attribute}][data-bilispeed-page="account"] .home-right { flex: 1; width: 0 !important; margin: 0 !important; }
+    html[${attribute}][data-bilispeed-page="account"] .home-top-msg-name { overflow-wrap: anywhere; }
+    html[${attribute}][data-bilispeed-page="account"] .home-top-level-all { width: 100% !important; }
+    html[${attribute}][data-bilispeed-page="account"] .home-top-progress-wrap { max-width: 100%; }
+    html[${attribute}][data-bilispeed-page="account"] .home-top-level-up { width: min(140px, 28vw) !important; }
+    html[${attribute}][data-bilispeed-page="account"] .home-top-level-number { display: block; margin: 4px 0 !important; }
+    html[${attribute}][data-bilispeed-page="account"] .home-to-update,
+    html[${attribute}][data-bilispeed-page="account"] .home-to-space {
+        position: relative !important; top: auto !important; right: auto !important; min-height: 40px; line-height: 40px !important;
+        margin: 8px 6px 0 0 !important;
+    }
+    html[${attribute}][data-bilispeed-page="account"] .index-invition-box {
+        width: 100% !important; height: auto !important; min-height: 120px; padding: 28px 12px !important;
+        background-size: cover !important; background-position: center;
+    }
+    html[${attribute}][data-bilispeed-page="account"] .invition-box-index { display: flex; flex-wrap: wrap; gap: 8px; height: auto !important; }
+    html[${attribute}][data-bilispeed-page="account"] .index-invition-box :is(.btn-ok, .btn-disable) {
+        position: static !important; float: none !important; flex: none; min-height: 40px; line-height: 40px;
+    }
+    html[${attribute}][data-bilispeed-page="account"] :is(.home-daily-task-warp, .home-mp, .home-safe) { padding: 24px 0 !important; }
+    html[${attribute}][data-bilispeed-page="account"] .home-dialy-task-tips { position: static !important; margin: 8px 0; }
+    html[${attribute}][data-bilispeed-page="account"] .home-dialy-exp-item { width: 49% !important; vertical-align: top; }
+    html[${attribute}][data-bilispeed-page="account"] .user-setting-warp { padding: 16px !important; }
+    html[${attribute}][data-bilispeed-page="account"] .el-form-item__label { float: none !important; display: block; width: auto !important; text-align: left; }
+    html[${attribute}][data-bilispeed-page="account"] .el-form-item__content { margin-left: 0 !important; }
+    html[${attribute}][data-bilispeed-page="account"] :is(.el-input, .el-textarea, .el-dialog, .popup-box) { width: 100% !important; min-width: 0 !important; max-width: calc(100vw - 32px) !important; }
+    html[${attribute}][data-bilispeed-page="account"] input { max-width: 100%; font-size: 16px; }
+
     /* Use the official password/SMS form on a phone, without the desktop QR column. */
     html[${attribute}] .login_wp,
     html[${attribute}] .login__main,
@@ -217,6 +343,9 @@
 `;
 
     function pageKind() {
+        if (location.hostname === 'account.bilibili.com') return 'account';
+        if (location.hostname === 'space.bilibili.com') return 'space';
+        if (location.hostname === 'passport.bilibili.com') return 'login';
         if (location.hostname === 'search.bilibili.com') return 'search';
         if (location.hostname === 't.bilibili.com') return 'dynamic';
         if (location.pathname.startsWith('/video/')) return 'video';
@@ -258,6 +387,62 @@
         if (tabs.previousElementSibling !== toolbar) toolbar.after(tabs);
     }
 
+    function closeDanmaku(wrap) {
+        wrap.removeAttribute('data-bilispeed-danmaku-open');
+        wrap.setAttribute('data-bilispeed-danmaku-closed', '');
+        const trigger = wrap.closest('.bpx-player-dm-setting');
+        if (trigger) (trigger.querySelector('[data-bilispeed-danmaku-trigger]') || trigger).setAttribute('aria-expanded', 'false');
+    }
+
+    function danmakuSettings() {
+        document.querySelectorAll('#bilibili-player .bpx-player-dm-setting').forEach(trigger => {
+            const wrap = trigger.querySelector('.bpx-player-dm-setting-wrap');
+            if (!wrap) return;
+            if (!wrap.querySelector('[data-bilispeed-danmaku-header]')) {
+                const header = document.createElement('header');
+                header.setAttribute('data-bilispeed-danmaku-header', '');
+                const title = document.createElement('span');
+                title.textContent = '弹幕设置';
+                const done = document.createElement('button');
+                done.type = 'button'; done.textContent = '完成';
+                done.setAttribute('aria-label', '关闭弹幕设置');
+                done.dataset.bilispeedControl = 'danmaku-close';
+                done.addEventListener('click', event => {
+                    event.preventDefault(); event.stopPropagation(); closeDanmaku(wrap);
+                });
+                header.append(title, done); wrap.prepend(header);
+            }
+            // Label the icon rather than making the popup's checkbox/slider
+            // descendants presentational children of one ARIA button.
+            const action = Array.from(trigger.children).find(child => child !== wrap) || trigger;
+            action.setAttribute('data-bilispeed-danmaku-trigger', '');
+            if (action !== trigger) action.setAttribute('role', 'button');
+            action.tabIndex = 0;
+            action.setAttribute('aria-label', '弹幕设置');
+            action.setAttribute('aria-expanded', String(wrap.hasAttribute('data-bilispeed-danmaku-open')));
+            if (managedDanmaku.has(trigger)) return;
+            managedDanmaku.add(trigger);
+            trigger.addEventListener('click', event => {
+                if (!(event.target instanceof Element)) return;
+                if (event.target.closest('.bpx-player-dm-setting-wrap')) return;
+                const current = trigger.querySelector('.bpx-player-dm-setting-wrap');
+                if (!current) return;
+                event.preventDefault(); event.stopImmediatePropagation();
+                if (current.hasAttribute('data-bilispeed-danmaku-open')) closeDanmaku(current);
+                else {
+                    current.removeAttribute('data-bilispeed-danmaku-closed');
+                    current.setAttribute('data-bilispeed-danmaku-open', '');
+                    (trigger.querySelector('[data-bilispeed-danmaku-trigger]') || trigger).setAttribute('aria-expanded', 'true');
+                }
+            }, true);
+            trigger.addEventListener('keydown', event => {
+                if (!(event.target instanceof Element) || !event.target.matches('[data-bilispeed-danmaku-trigger]')
+                        || !['Enter', ' '].includes(event.key)) return;
+                event.preventDefault(); trigger.click();
+            });
+        });
+    }
+
 
     function refresh() {
         if (suspended) return;
@@ -286,7 +471,7 @@
             // Give the official player a chance to resize its video/danmaku canvas.
             setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
         }
-        if (page === 'video') videoTabs();
+        if (page === 'video') { videoTabs(); danmakuSettings(); }
         if (window.__BiliTouchPlayer) window.__BiliTouchPlayer.refresh();
     }
 
@@ -323,5 +508,12 @@
     window.addEventListener('popstate', schedule);
     window.addEventListener('hashchange', schedule);
     window.addEventListener('pageshow', schedule);
+    document.addEventListener('click', event => {
+        if (suspended || !(event.target instanceof Element) || event.target.closest('.bpx-player-dm-setting')) return;
+        document.querySelectorAll('[data-bilispeed-danmaku-open]').forEach(closeDanmaku);
+    }, true);
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') document.querySelectorAll('[data-bilispeed-danmaku-open]').forEach(closeDanmaku);
+    });
     refresh();
 })();

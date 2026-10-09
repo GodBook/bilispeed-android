@@ -80,6 +80,7 @@ public class MainActivity extends Activity {
     private static final int FILE_PICKER = 100;
     private static final int MAX_BROWSER_STATE_BYTES = 256 * 1024;
     private static final float[] PRESETS = {1, 1.25f, 1.5f, 2, 2.5f, 3, 3.5f, 4, 5};
+    private static final String[] APPEARANCE_TARGETS = {"menu", "speed", "subtitle"};
     private static final Set<String> ORIGINS = new HashSet<>(Arrays.asList(
             "https://bilibili.com", "https://*.bilibili.com"));
 
@@ -96,6 +97,9 @@ public class MainActivity extends Activity {
     private LinearLayout navigation;
     private final ArrayList<TextView> navigationItems = new ArrayList<>();
     private TextView speedButton;
+    private TextView menuButton;
+    private FrameLayout menuTouchTarget;
+    private FrameLayout speedTouchTarget;
     private TextView statusText;
     private TextView chosenText;
     private EditText customInput;
@@ -104,6 +108,7 @@ public class MainActivity extends Activity {
     private LinearLayout errorPanel;
     private TextView errorText;
     private Dialog speedDialog;
+    private Dialog appearanceDialog;
     private View fullscreenView;
     private WebChromeClient.CustomViewCallback fullscreenCallback;
     private ValueCallback<Uri[]> uploadCallback;
@@ -283,21 +288,32 @@ public class MainActivity extends Activity {
         floating = new LinearLayout(this);
         floating.setGravity(Gravity.CENTER);
         floating.setElevation(dp(6));
-        TextView menu = text("···", 24, INK);
-        menu.setGravity(Gravity.CENTER);
-        menu.setContentDescription("浏览器菜单");
-        menu.setBackground(surface(Color.WHITE, 24, Color.rgb(235, 231, 233)));
-        menu.setOnClickListener(view -> showBrowserMenu());
-        floating.addView(menu, new LinearLayout.LayoutParams(dp(44), dp(48)));
+        menuButton = text("···", 24, INK);
+        menuButton.setGravity(Gravity.CENTER);
+        menuButton.setBackground(surface(Color.WHITE, 24, Color.rgb(235, 231, 233)));
+        menuButton.setOnClickListener(view -> showBrowserMenu());
+        menuButton.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        menuTouchTarget = new FrameLayout(this);
+        menuTouchTarget.setContentDescription("浏览器菜单，拖动可移动");
+        menuTouchTarget.setFocusable(true);
+        menuTouchTarget.setOnClickListener(view -> showBrowserMenu());
+        menuTouchTarget.addView(menuButton);
+        floating.addView(menuTouchTarget);
         speedButton = text("1x  倍速", 15, Color.WHITE);
         speedButton.setGravity(Gravity.CENTER);
         speedButton.setTypeface(null, Typeface.BOLD);
         speedButton.setBackground(surface(PINK, 24, PINK));
         speedButton.setOnClickListener(view -> openSpeedPanel());
-        LinearLayout.LayoutParams speedLayout = new LinearLayout.LayoutParams(dp(92), dp(48));
+        speedButton.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        speedTouchTarget = new FrameLayout(this);
+        speedTouchTarget.setFocusable(true);
+        speedTouchTarget.setOnClickListener(view -> openSpeedPanel());
+        speedTouchTarget.addView(speedButton);
+        LinearLayout.LayoutParams speedLayout = new LinearLayout.LayoutParams(-2, -2);
         speedLayout.leftMargin = dp(6);
-        floating.addView(speedButton, speedLayout);
-        root.addView(floating, new FrameLayout.LayoutParams(dp(142), dp(48)));
+        floating.addView(speedTouchTarget, speedLayout);
+        root.addView(floating, new FrameLayout.LayoutParams(-2, -2));
+        applyFloatingAppearance();
         View.OnTouchListener drag = new View.OnTouchListener() {
             private float downX, downY, startX, startY;
             private boolean moved;
@@ -324,8 +340,13 @@ public class MainActivity extends Activity {
                 return event.getActionMasked() == MotionEvent.ACTION_CANCEL;
             }
         };
-        menu.setOnTouchListener(drag);
+        menuTouchTarget.setOnTouchListener(drag);
+        speedTouchTarget.setOnTouchListener(drag);
+        menuButton.setOnTouchListener(drag);
         speedButton.setOnTouchListener(drag);
+        floating.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) positionFloating();
+        });
         root.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) positionFloating();
         });
@@ -520,6 +541,7 @@ public class MainActivity extends Activity {
         frameStates.clear();
         setKeepingScreenOn(false);
         if (speedDialog != null) speedDialog.dismiss();
+        if (appearanceDialog != null) appearanceDialog.dismiss();
         if (uploadCallback != null) {
             ValueCallback<Uri[]> pending = uploadCallback;
             uploadCallback = null;
@@ -550,17 +572,20 @@ public class MainActivity extends Activity {
     private String controllerInitialState() {
         return "window.__BILI_SPEED_INITIAL__=" + selectedRate + ";window.__BILI_SPEED_SUSPENDED__="
                 + !foreground + ";window.__BILI_TOUCH_ENABLED__=" + touchLayout
-                + ";window.__BILI_TOUCH_FULLSCREEN__=" + (fullscreenView != null) + ";\n";
+                + ";window.__BILI_TOUCH_FULLSCREEN__=" + (fullscreenView != null)
+                + ";window.__BILI_BUTTON_APPEARANCE__=" + subtitleAppearance() + ";\n";
     }
 
     private void injectIntoPage() {
         if (destroyed || !isBiliHttps(browser.getUrl())) return;
         browser.evaluateJavascript(controllerInitialState() + touchInjection + "\n" + injection
-                + "\nwindow.__BiliSpeed && window.__BiliSpeed.configure(" + configMessage() + ");", null);
+                + "\nwindow.__BiliSpeed && window.__BiliSpeed.configure(" + configMessage() + ");"
+                + "window.__BiliTouchPlayer && window.__BiliTouchPlayer.setAppearance(" + subtitleAppearance() + ");", null);
     }
 
     private String configMessage() {
-        return "{\"type\":\"config\",\"rate\":" + selectedRate + ",\"suspended\":" + !foreground + "}";
+        return "{\"type\":\"config\",\"rate\":" + selectedRate + ",\"suspended\":" + !foreground
+                + ",\"buttons\":" + subtitleAppearance() + "}";
     }
 
     private void configureFrames() {
@@ -587,6 +612,7 @@ public class MainActivity extends Activity {
     private void updateFloatingLabel() {
         speedButton.setText(formatRate(selectedRate) + "  倍速");
         speedButton.setContentDescription("播放倍速 " + formatRate(selectedRate) + "，点击调节，拖动可移动");
+        speedTouchTarget.setContentDescription(speedButton.getContentDescription());
     }
 
     private void updatePlaybackStatus() {
@@ -776,9 +802,133 @@ public class MainActivity extends Activity {
         }
     }
 
+    private int appearanceValue(String target, String property) {
+        int value = preferences.getInt(target + "_" + property, 100);
+        return Math.max(property.equals("size") ? 70 : 20,
+                Math.min(property.equals("size") ? 150 : 100, value));
+    }
+
+    private String subtitleAppearance() {
+        return "{\"size\":" + appearanceValue("subtitle", "size")
+                + ",\"opacity\":" + appearanceValue("subtitle", "opacity") + "}";
+    }
+
+    private void styleAppearancePreview(TextView view, String target) {
+        float scale = appearanceValue(target, "size") / 100f;
+        int width = target.equals("speed") ? 92 : 44;
+        int textSize = target.equals("menu") ? 24 : target.equals("speed") ? 15 : 13;
+        view.setTextSize(textSize * scale);
+        view.setAlpha(appearanceValue(target, "opacity") / 100f);
+        if (view.getBackground() instanceof GradientDrawable) {
+            ((GradientDrawable) view.getBackground()).setCornerRadius(dp(24 * scale));
+        }
+        view.setLayoutParams(new FrameLayout.LayoutParams(dp(width * scale), dp(48 * scale), Gravity.CENTER));
+    }
+
+    private void applyFloatingAppearance() {
+        if (floating == null) return;
+        styleAppearancePreview(menuButton, "menu");
+        styleAppearancePreview(speedButton, "speed");
+        for (int index = 0; index < 2; index++) {
+            FrameLayout target = index == 0 ? menuTouchTarget : speedTouchTarget;
+            LinearLayout.LayoutParams layout = (LinearLayout.LayoutParams) target.getLayoutParams();
+            float scale = appearanceValue(APPEARANCE_TARGETS[index], "size") / 100f;
+            // Keep a comfortable touch target even when the visible button is small.
+            layout.width = dp(Math.max(44, (index == 0 ? 44 : 92) * scale));
+            layout.height = dp(Math.max(48, 48 * scale));
+            target.setLayoutParams(layout);
+        }
+        floating.post(this::positionFloating);
+    }
+
+    private SeekBar addAppearanceSlider(LinearLayout panel, String title, String target,
+                                        String property, Runnable preview) {
+        boolean size = property.equals("size");
+        int minimum = size ? 70 : 20;
+        int maximum = size ? 150 : 100;
+        TextView value = text("", 14, MUTED);
+        panel.addView(value);
+        SeekBar slider = new SeekBar(this);
+        slider.setMax((maximum - minimum) / 5);
+        slider.setProgress((appearanceValue(target, property) - minimum) / 5);
+        slider.setContentDescription(title);
+        slider.setProgressTintList(android.content.res.ColorStateList.valueOf(PINK));
+        slider.setThumbTintList(android.content.res.ColorStateList.valueOf(PINK));
+        panel.addView(slider, new LinearLayout.LayoutParams(-1, dp(44)));
+        int valueFormat = size ? R.string.button_size_percent : R.string.button_opacity_percent;
+        value.setText(getString(valueFormat, appearanceValue(target, property)));
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                int percent = minimum + progress * 5;
+                value.setText(getString(valueFormat, percent));
+                preferences.edit().putInt(target + "_" + property, percent).apply();
+                preview.run();
+                applyFloatingAppearance();
+                updateDocumentScript();
+                configureFrames();
+                if (!destroyed && isBiliHttps(browser.getUrl())) browser.evaluateJavascript(
+                        "window.__BiliTouchPlayer && window.__BiliTouchPlayer.setAppearance(" + subtitleAppearance() + ");", null);
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) { }
+            @Override public void onStopTrackingTouch(SeekBar bar) { }
+        });
+        return slider;
+    }
+
+    void showButtonAppearance() {
+        if (appearanceDialog != null && appearanceDialog.isShowing()) return;
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(20), dp(8), dp(20), dp(12));
+        TextView hint = text("调节后即时生效并自动保存。字幕按钮的设置用于触屏布局。", 13, MUTED);
+        panel.addView(hint);
+        ArrayList<SeekBar> sliders = new ArrayList<>();
+        String[] labels = {"三点按钮", "倍速按钮", "字幕按钮"};
+        for (int index = 0; index < APPEARANCE_TARGETS.length; index++) {
+            String target = APPEARANCE_TARGETS[index];
+            LinearLayout heading = new LinearLayout(this);
+            heading.setGravity(Gravity.CENTER_VERTICAL);
+            TextView label = text(labels[index], 16, INK);
+            label.setTypeface(null, Typeface.BOLD);
+            heading.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+            FrameLayout previewHost = new FrameLayout(this);
+            previewHost.setBackground(surface(index == 2 ? INK : Color.rgb(246, 246, 248), 12,
+                    index == 2 ? INK : Color.rgb(237, 237, 241)));
+            TextView preview = text(index == 0 ? "···" : index == 1 ? formatRate(selectedRate) + "  倍速" : "字幕", 15,
+                    index == 0 ? INK : Color.WHITE);
+            preview.setGravity(Gravity.CENTER);
+            if (index < 2) preview.setBackground(surface(index == 0 ? Color.WHITE : PINK, 24,
+                    index == 0 ? Color.rgb(235, 231, 233) : PINK));
+            previewHost.addView(preview);
+            heading.addView(previewHost, new LinearLayout.LayoutParams(dp(148), dp(80)));
+            panel.addView(heading);
+            Runnable updatePreview = () -> styleAppearancePreview(preview, target);
+            updatePreview.run();
+            sliders.add(addAppearanceSlider(panel, labels[index] + "大小", target, "size", updatePreview));
+            sliders.add(addAppearanceSlider(panel, labels[index] + "不透明度", target, "opacity", updatePreview));
+        }
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(panel);
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("按钮外观").setView(scroll)
+                .setNeutralButton("恢复默认", null).setPositiveButton("完成", null).create();
+        appearanceDialog = dialog;
+        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(view -> {
+            for (int index = 0; index < sliders.size(); index++) {
+                // Changing these controls uses the same persistence and preview path.
+                sliders.get(index).setProgress(index % 2 == 0 ? 6 : 16);
+            }
+        }));
+        dialog.show();
+        Window window = dialog.getWindow();
+        if (window != null) {
+            int available = Math.max(dp(240), root.getHeight() - root.getPaddingTop() - root.getPaddingBottom() - dp(32));
+            window.setLayout(Math.min(root.getWidth() - dp(24), dp(440)), available);
+        }
+    }
+
     private void showBrowserMenu() {
         String[] items = {"B站首页", "后退", "刷新", "打开链接", "复制当前链接", "在系统浏览器打开",
-                touchLayout ? "切换电脑原版布局" : "切换触屏布局", updater.menuLabel(),
+                touchLayout ? "切换电脑原版布局" : "切换触屏布局", "按钮外观", updater.menuLabel(),
                 "启动时检查更新：" + (updater.automaticEnabled() ? "开" : "关"), "项目源码", "关于"};
         new AlertDialog.Builder(this).setTitle("浏览器").setItems(items, (dialog, which) -> {
             switch (which) {
@@ -798,10 +948,11 @@ public class MainActivity extends Activity {
                 case 6:
                     setTouchLayout(!touchLayout);
                     break;
-                case 7: updater.checkManually(); break;
-                case 8: updater.toggleAutomatic(); break;
-                case 9: openExternal("https://github.com/" + BuildConfig.UPDATE_REPOSITORY); break;
-                case 10: new AlertDialog.Builder(this).setTitle("B站倍速浏览器 " + BuildConfig.VERSION_NAME)
+                case 7: showButtonAppearance(); break;
+                case 8: updater.checkManually(); break;
+                case 9: updater.toggleAutomatic(); break;
+                case 10: openExternal("https://github.com/" + BuildConfig.UPDATE_REPOSITORY); break;
+                case 11: new AlertDialog.Builder(this).setTitle("B站倍速浏览器 " + BuildConfig.VERSION_NAME)
                         .setMessage("使用B站电脑端网页，默认按手机触屏排版；底部可进入首页、热门、搜索、动态和我的。\n\n"
                                 + "点击粉色按钮调节倍速，拖动按钮可移动位置。\n\n"
                                 + "支持 1.25x、1.5x、2x、2.5x、3x、3.5x、4x、5x，"
@@ -1112,9 +1263,10 @@ public class MainActivity extends Activity {
         }
     }
 
-    private float maxFloatX() { return Math.max(dp(8), root.getWidth() - root.getPaddingLeft() - root.getPaddingRight() - dp(150)); }
+    private float maxFloatX() { return Math.max(dp(8), root.getWidth() - root.getPaddingLeft() - root.getPaddingRight()
+            - floating.getWidth() - dp(8)); }
     private float maxFloatY() { return Math.max(dp(8), root.getHeight() - root.getPaddingTop() - root.getPaddingBottom()
-            - dp(56) - (navigation != null && navigation.getVisibility() == View.VISIBLE ? dp(56) : 0)); }
+            - floating.getHeight() - dp(8) - (navigation != null && navigation.getVisibility() == View.VISIBLE ? dp(56) : 0)); }
     private String positionPrefix() { return fullscreenView != null ? "fullscreen_" : "normal_"; }
     private void positionFloating() {
         if (floating == null || root.getWidth() == 0) return;
@@ -1130,6 +1282,7 @@ public class MainActivity extends Activity {
 
     private void goBack() {
         if (speedDialog != null && speedDialog.isShowing()) speedDialog.dismiss();
+        else if (appearanceDialog != null && appearanceDialog.isShowing()) appearanceDialog.dismiss();
         else if (fullscreenView != null) exitFullscreen();
         else if (browser.canGoBack()) browser.goBack();
         else finish();
@@ -1138,6 +1291,7 @@ public class MainActivity extends Activity {
     @Override public void onConfigurationChanged(Configuration configuration) {
         super.onConfigurationChanged(configuration);
         if (speedDialog != null) speedDialog.dismiss();
+        if (appearanceDialog != null) appearanceDialog.dismiss();
         root.post(this::positionFloating);
     }
     @Override protected void onNewIntent(Intent intent) {
@@ -1200,6 +1354,7 @@ public class MainActivity extends Activity {
         if (updater != null) updater.close();
         handler.removeCallbacksAndMessages(null);
         if (speedDialog != null) speedDialog.dismiss();
+        if (appearanceDialog != null) appearanceDialog.dismiss();
         exitFullscreen();
         if (uploadCallback != null) uploadCallback.onReceiveValue(null);
         if (documentScript != null && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) documentScript.remove();
@@ -1214,6 +1369,7 @@ public class MainActivity extends Activity {
 
     WebView browserForTesting() { return browser; }
     Dialog speedDialogForTesting() { return speedDialog; }
+    Dialog appearanceDialogForTesting() { return appearanceDialog; }
     boolean fullscreenForTesting() { return fullscreenView != null; }
     View fullscreenViewForTesting() { return fullscreenView; }
 

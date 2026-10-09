@@ -293,6 +293,7 @@
     function configure(message) {
         if (typeof message.suspended === 'boolean') suspended = message.suspended;
         if (window.__BiliTouch) window.__BiliTouch.setSuspended(suspended);
+        if (message.buttons && window.__BiliTouchPlayer) window.__BiliTouchPlayer.setAppearance(message.buttons);
         if (suspended) stopHeartbeat(); else scheduleHeartbeat();
         return setRate(message.rate);
     }

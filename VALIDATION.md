@@ -1,5 +1,23 @@
 # Android 16 验收记录
 
+## 1.2.3：按钮外观、双击和弹幕 / 个人中心适配
+
+验收日期：2026-10-09。以下功能记录对应原签名的发布前候选 APK；正式发布附件与更新渠道验证在本节末另行记录。
+
+- assembleRelease、lintRelease 与三个 JavaScript 文件语法检查通过；Android lint 为 0 errors / 4 warnings，均为原有警告。
+- 本轮按测试方法去重，**45 项取得通过结果**：触屏播放器 17 项、布局与按钮设置 7 项、渲染进程恢复 3 项、播放核心 15 项、真实 B 站 3 项。这是分组及隔离复测的汇总，完整 46 项组合没有一次全部通过；逐档倍速计时的限制见下文。
+- 新增按钮设置检查覆盖六个滑杆、即时预览、字幕按钮实际 CSS、重启后保存、恢复默认、最大尺寸及原生按钮边界。三点和倍速按钮缩小后仍保留至少 44 × 48dp 的触摸范围。截图：artifacts/BiliSpeed-button-appearance-320.png。
+- 真实单指输入覆盖普通 / 全屏的双击播放与暂停、暂停遮罩、单击不暂停、屏蔽官方兼容点击、滑动、双指、长按、取消及换视频。实站繁忙播放时发现按 JS 处理时间识别触摸会误判，已改为事件原始时间并保留一个单击时间记录；最新实站复核为 OK (1 test)，见 artifacts/touch-refinement-live-delivery-check.txt。
+- 320px 窄屏（600 × 1400 / density 300）分轮确认全部 24 项播放器 / 布局方法通过，记录为 artifacts/touch-refinement-320px-check.txt 和 touch-refinement-320px-recheck.txt；后者为 OK (2 tests)，补齐原组合中受输入时序影响的全屏双击与弹幕关闭检查。最大字幕按钮下，音量面板、字幕和控制栏均在播放器边界内。截图：BiliSpeed-large-subtitle-fullscreen-320.png。
+- 弹幕适配使用官方弹幕控件，修复外层位置和内部 BUI 面板的固定宽高，按当前基础 / 高级面板内容排版；新增完成、再次点击图标和面板外关闭。真实 B 站检查通过不透明度调节、基础 / 高级切换、关闭后继续滑动进度、播放和全屏；滑杆检查选择不同于上次保存的数值，允许重复运行。截图：artifacts/BiliSpeed-live-danmaku-settings.png、BiliSpeed-live-danmaku-advanced.png。
+- 个人中心使用官方公开容器结构和固定尺寸的本地夹具，验证横向菜单、长昵称、头像区域、每日奖励、昵称表单边界及菜单 / 输入操作。截图：artifacts/BiliSpeed-account-mobile-320.png。未使用真实账号登录，不能把该夹具检查当作登录后全部账号页面的实测。
+- 最终候选的三项真实渲染进程恢复检查通过，见 artifacts/touch-refinement-delivery-check.txt；该轮实站滑杆曾因点击与已保存数值相同而失败，之后在上述实站隔离检查中通过。搜索 / 热门在 touch-refinement-live-final-check.txt 中通过，动态 / 官方登录表单在 touch-refinement-final-build.txt 中通过。
+- 窄屏检查后已恢复模拟器原有的 720 × 1600 / density 300 设置。测试使用 Android 16 / API 36 x86_64、WebView 133.0.6943.137；未连接实体手机，未验收登录账号、会员字幕和耗电。
+
+保留的失败与环境记录：首次回归遇到 System UI 无响应遮挡触摸；长组合检查中的逐档播放计时在 3x 测到 0，随后主机 GPU 模式的模拟器退出，日志出现 bad color buffer handle。恢复后使用软件渲染进行界面与实站复测，未重新证明全部档位的实际时间比例。初次失败记录保存在 touch-refinement-first-tests.txt、touch-refinement-regression-first-tests.txt 等文件中，未算作通过。触摸时序、面板固定高度 / 关闭、设置消息及重复滑杆值的问题已分别修正并复测；不能将剩余计时波动称为已修复。
+
+候选安装包：artifacts/tested-1.2.3/BiliSpeed-1.2.3-Android16.apk，versionName 1.2.3 / versionCode 7，1782609 字节，targetSdk 36 / minSdk 26，发布构建关闭调试。SHA-256：0A73F1B6DAD1468073542990775BCC7F519BEA2E517EDAD1A9FADC590194B381。APK Signature Scheme v2 校验通过；证书 SHA-256 与原版本一致：e2d8ed51e71288c8f2a0ea81e3f7ac23aba499d59ed6d7eace205e78960f94b3。APK、update.json 和 SHA256SUMS.txt 来自同一构建，已在模拟器覆盖安装验证。
+
 ## 1.2.2：页面恢复、排版开销与内容入口状态
 
 验收日期：2026-10-09。以下功能记录对应原签名的发布前测试构建；正式发布附件与更新渠道验证在本节末另行记录。
