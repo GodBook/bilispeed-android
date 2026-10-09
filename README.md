@@ -6,7 +6,9 @@
 
 ## 安装与使用
 
-在 [1.2.0 Releases](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.0) 下载 `BiliSpeed-1.2.0-Android16.apk`，传到手机后覆盖安装。如系统询问，允许当前文件管理器安装此 APK。无需 root，也不会替换官方 B 站 App。已有 1.1.x 可在应用内检查更新；已有 1.0.0 时先手动覆盖安装，即可获得在线更新入口。本机安装包位于 `artifacts/BiliSpeed-1.2.0-Android16.apk`。
+在 [1.2.1 Releases](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.1) 下载 `BiliSpeed-1.2.1-Android16.apk`，传到手机后覆盖安装。如系统询问，允许当前文件管理器安装此 APK。无需 root，也不会替换官方 B 站 App。已有 1.1.x 或 1.2.0 可在应用内检查更新；已有 1.0.0 时先手动覆盖安装，即可获得在线更新入口。
+
+1.2.1 使用原签名，可以覆盖安装旧版，保留设置与已有 Cookies。本机安装包位于 `artifacts/BiliSpeed-1.2.1-Android16.apk`。
 
 - 点粉色「倍速」按钮选择 1x、1.25x、1.5x、2x、2.5x、3x、3.5x、4x、5x。
 - 滑杆支持 0.25–5x，步长 0.05；输入框支持两位小数，例如 2.75x。
@@ -14,7 +16,11 @@
 - 拖动浮动按钮调整位置；竖屏和全屏分别记住位置。
 - 底部「首页 / 热门 / 搜索 / 动态 / 我的」提供常用入口；「我的」可打开官方个人中心、观看历史和稍后再看。
 - 首页和搜索视频列表按两列展示；视频页把播放器放到上方并铺满宽度，推荐栏纵向排列；「简介 / 评论 / 选集」可直接跳到对应内容。
-- 触屏播放栏提供暂停 / 继续、进度滑杆、播放时间和全屏入口；直接控制官方 HTML5 视频，不依赖电脑端悬停控件是否加载。画质等更多设置可在电脑原版布局中使用。
+- 触屏播放栏提供暂停 / 继续、进度滑杆、播放时间、音量、字幕和全屏入口；直接控制官方 HTML5 视频，不依赖电脑端悬停控件是否加载。画质等更多设置可在电脑原版布局中使用。
+- 在视频画面上单指左右滑动可预览进度，松手后跳转；一次横跨画面的滑动最多调节 120 秒。上下滑动仍可滚动页面，双指操作或手势取消不会跳转；直播不提供进度跳转。
+- 「音量」面板支持 0–100% 调节和静音 / 恢复；「字幕」面板支持选择视频已有字幕语言或关闭字幕，兼容 HTML5 字幕轨道和官方播放器的主字幕菜单。无字幕或需登录时会显示说明，字幕权限由官方网页决定。
+- 全屏时播放栏默认隐藏，轻点画面显示，再次点击可收起；约 3 秒无操作自动隐藏，拖动滑杆或打开设置面板时保持显示。隐藏时也可以左右滑动调节进度。
+- 播放器根据视频比例和可用屏幕高度调整尺寸，横竖屏切换时重新计算，画面按比例完整显示；触屏布局按手机宽度显示，电脑原版布局保留双指缩放。
 - 点「···」返回首页、后退、刷新、打开链接 / BV 号、复制链接，或切换「电脑原版布局 / 触屏布局」。两种布局均使用电脑端，原版布局支持双指缩放。
 - 官方 App 的分享链接也可以分享给本浏览器。
 - 「打开链接」支持粘贴完整分享文本、短链接或 BV 号，自动提取网址；HTTP 链接会升级为 HTTPS。手机端首页、视频、番剧、搜索、动态和空间链接会转到对应电脑端，并保留分 P、播放时间等参数。
@@ -79,6 +85,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-apk.ps1
 
 测试使用独立的测试 APK 和测试视频，覆盖真实媒体播放速度、网站重置、替换视频、iframe、Shadow DOM、自定义数值、速度持久化、全屏、后台延迟播放、批量页面更新与分享文本解析，以及电脑端链接转换、旧版偏好迁移、两列触屏布局、原版布局切换，以及更新版本、地址、哈希、包名、签名、取消、失败重试和安装文件隔离。测试媒体不会包含在交付的 APK 中。
 
+播放器专项还覆盖单指滑动与取消手势、音量和静音恢复、字幕选择、全屏自动隐藏、按住滑杆、换视频、横竖屏和竖向视频比例。1.2.1 的本地相关检查共 29 项通过；实站样本无字幕，账号字幕资源和所有倍速档位的实际计时限制见 VALIDATION.md。
+
 构建脚本通过 ADB 在指定设备上运行测试；测试包会临时复制到英文路径，避免 Windows 安卓工具对中文项目路径的兼容问题。结果保存在 `artifacts/instrumentation-tests.txt`。
 
 额外验证真实 B 站电脑端首页、竖屏布局和公开视频的 5x 播放，并保存界面截图（需要设备能够联网）：
@@ -95,20 +103,20 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-apk.ps1
 
 此检查依赖本仓库已有正式 Release，并需要设备能够联网访问 GitHub。
 
-主要代码：MainActivity.java 管理浏览器、底部导航与原生面板，assets/desktop-touch.js 负责电脑网页触屏排版，assets/speed-controller.js 负责播放器倍速，AppUpdater.java 管理在线更新。targetSdk 为 36，minSdk 为 26；验收优先使用 Android 16。
+主要代码：MainActivity.java 管理浏览器、底部导航与原生面板，assets/desktop-touch.js 负责电脑网页触屏排版，assets/player-controls.js 负责触摸进度、音量、字幕与全屏控件，assets/speed-controller.js 负责播放器倍速，AppUpdater.java 管理在线更新。targetSdk 为 36，minSdk 为 26；验收优先使用 Android 16。
 
 ## 发布后续更新
 
-1. 在 version.properties 递增 versionCode 并更新 versionName，例如 5 / 1.2.1。
+1. 在 version.properties 递增 versionCode 并更新 versionName，例如 6 / 1.2.2。
 2. 修改 release-notes.md，使用原来的 .signing 密钥构建并验证 APK。
 3. 提交、推送源码并创建对应标签，再发布三个 Release 附件：
 
 ~~~powershell
 .\scripts\build-apk.ps1 -RunTests -DeviceSerial emulator-5580
 git add .
-git commit -m "Release 1.2.1"
-git tag v1.2.1
-git push origin main v1.2.1
+git commit -m "Release 1.2.2"
+git tag v1.2.2
+git push origin main v1.2.2
 .\scripts\publish-release.ps1
 ~~~
 

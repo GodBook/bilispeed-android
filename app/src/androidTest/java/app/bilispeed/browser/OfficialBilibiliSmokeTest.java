@@ -69,14 +69,15 @@ public class OfficialBilibiliSmokeTest {
         int[] position = new int[2];
         float[] scale = new float[1];
         instrumentation.runOnMainSync(() -> {
-            activity.browserForTesting().getLocationOnScreen(position);
-            scale[0] = (float) (activity.browserForTesting().getWidth() / point.optDouble("width"));
+            android.view.View surface = activity.fullscreenForTesting() ? activity.fullscreenViewForTesting() : activity.browserForTesting();
+            surface.getLocationOnScreen(position);
+            scale[0] = (float) (surface.getWidth() / point.optDouble("width"));
         });
         float x = position[0] + (float) point.getDouble("x") * scale[0];
         float y = position[1] + (float) point.getDouble("y") * scale[0];
         long now = SystemClock.uptimeMillis();
-        MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0);
-        MotionEvent up = MotionEvent.obtain(now, now + 70, MotionEvent.ACTION_UP, x, y, 0);
+        MotionEvent down = PlayerControlsInstrumentationTest.fingerInput(now, now, MotionEvent.ACTION_DOWN, x, y);
+        MotionEvent up = PlayerControlsInstrumentationTest.fingerInput(now, now + 70, MotionEvent.ACTION_UP, x, y);
         down.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
         up.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
         assertTrue(instrumentation.getUiAutomation().injectInputEvent(down, true));
@@ -94,6 +95,27 @@ public class OfficialBilibiliSmokeTest {
             assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output));
         } finally { bitmap.recycle(); }
         System.out.println("BILISPEED_SCREENSHOT=" + file.getAbsolutePath());
+    }
+
+    private void swipePlayer() throws Exception {
+        JSONObject bounds = new JSONObject((String) js("JSON.stringify((function(){var r=document.querySelector('.bpx-player-video-area').getBoundingClientRect();"
+                + "return {left:r.left,top:r.top,width:r.width,height:r.height,viewport:innerWidth};})())"));
+        int[] position = new int[2];
+        float[] scale = new float[1];
+        instrumentation.runOnMainSync(() -> {
+            activity.browserForTesting().getLocationOnScreen(position);
+            scale[0] = (float) (activity.browserForTesting().getWidth() / bounds.optDouble("viewport"));
+        });
+        long start = SystemClock.uptimeMillis();
+        for (int step = 0; step <= 7; step++) {
+            float x = position[0] + (float) (bounds.getDouble("left") + bounds.getDouble("width") * (.25 + .15 * Math.min(step, 6) / 6)) * scale[0];
+            float y = position[1] + (float) (bounds.getDouble("top") + bounds.getDouble("height") * .3) * scale[0];
+            int action = step == 0 ? MotionEvent.ACTION_DOWN : step == 7 ? MotionEvent.ACTION_UP : MotionEvent.ACTION_MOVE;
+            MotionEvent event = PlayerControlsInstrumentationTest.fingerInput(start, SystemClock.uptimeMillis(), action, x, y);
+            event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            assertTrue(instrumentation.getUiAutomation().injectInputEvent(event, true));
+            event.recycle(); SystemClock.sleep(40);
+        }
     }
 
     private void assertTouchViewport() throws Exception {
@@ -192,6 +214,35 @@ public class OfficialBilibiliSmokeTest {
             await("document.querySelector('[data-bilispeed-control=play]') && document.querySelector('[data-bilispeed-control=play]').getBoundingClientRect().width >= 30", 10);
             tapElement("[data-bilispeed-control=play]");
             await("document.querySelector('video').paused", 5);
+            tapElement("[data-bilispeed-control=volume]");
+            js("window._oldVolume=document.querySelector('video').volume;window._oldMuted=document.querySelector('video').muted;"
+                    + "var s=document.querySelector('[data-bilispeed-control=volume-slider]');s.value=35;s.dispatchEvent(new Event('input',{bubbles:true}));true");
+            await("Math.abs(document.querySelector('video').volume-.35)<.001 && !document.querySelector('video').muted", 5);
+            screenshot("BiliSpeed-live-volume");
+            tapElement("[data-bilispeed-control=mute]");
+            await("document.querySelector('video').muted", 5);
+            tapElement("[data-bilispeed-control=mute]");
+            await("!document.querySelector('video').muted", 5);
+            js("document.querySelector('video').volume=window._oldVolume;document.querySelector('video').muted=window._oldMuted;true");
+            tapElement("[data-bilispeed-control=close-panel]");
+            tapElement("[data-bilispeed-control=subtitles]");
+            await("!document.getElementById('bilispeed-player-panel').hidden", 5);
+            System.out.println("BILISPEED_LIVE_SUBTITLES=" + js("JSON.stringify({panel:document.getElementById('bilispeed-player-panel').innerText,"
+                    + "official:!!document.querySelector('.bpx-player-ctrl-subtitle'),languages:Array.from(document.querySelectorAll('.bpx-player-ctrl-subtitle-major-content [data-lan]')).map(function(e){return e.textContent.trim();})})"));
+            screenshot("BiliSpeed-live-subtitles");
+            if (Boolean.TRUE.equals(js("!!document.querySelector('[data-bilispeed-control=subtitle-language]')"))) {
+                tapElement("[data-bilispeed-control=subtitle-language]");
+                await("document.querySelector('[data-bilispeed-control=subtitles]').getAttribute('aria-pressed')==='true'", 5);
+                tapElement("[data-bilispeed-control=subtitles]");
+                tapElement("[data-bilispeed-control=subtitle-off]");
+            } else {
+                assertTrue((Boolean) js("/暂无可用字幕|登录后/.test(document.getElementById('bilispeed-player-panel').textContent)"));
+                tapElement("[data-bilispeed-control=close-panel]");
+            }
+            js("window._beforeSwipe=document.querySelector('video').currentTime;true");
+            swipePlayer();
+            await("document.querySelector('video').currentTime>window._beforeSwipe+5", 10);
+            assertTrue("Swiping a paused official video must preserve pause", (Boolean) js("document.querySelector('video').paused"));
             tapElement("[data-bilispeed-control=seek]");
             await("document.querySelector('video').currentTime > document.querySelector('video').duration * 0.4"
                     + " && document.querySelector('video').currentTime < document.querySelector('video').duration * 0.7", 15);
@@ -209,7 +260,19 @@ public class OfficialBilibiliSmokeTest {
                 SystemClock.sleep(100);
             } while (SystemClock.elapsedRealtime() < deadline);
             assertTrue("The official desktop fullscreen control must enter Android fullscreen", fullscreen.get());
+            PlayerControlsInstrumentationTest.dismissImmersiveHint(instrumentation);
+            await("document.getElementById('bilispeed-touch-controls').dataset.hidden==='true'", 5);
+            System.out.println("BILISPEED_LIVE_FULLSCREEN_LAYOUT=" + js("JSON.stringify({full:document.fullscreenElement&&document.fullscreenElement.className,"
+                    + "viewport:{width:innerWidth,height:innerHeight},intrinsic:{width:document.querySelector('video').videoWidth,height:document.querySelector('video').videoHeight},"
+                    + "nodes:Array.from(document.querySelectorAll('.bpx-player-container,.bpx-player-primary-area,.bpx-player-video-area,.bpx-player-video-wrap,video,#bilispeed-touch-controls')).map(function(e){"
+                    + "var r=e.getBoundingClientRect(),s=getComputedStyle(e);return {c:e.className,id:e.id,screen:e.dataset.screen,x:r.x,y:r.y,w:r.width,h:r.height,padding:s.padding,position:s.position};})})"));
             screenshot("BiliSpeed-desktop-fullscreen");
+            tapElement(".bpx-player-video-area");
+            await("document.getElementById('bilispeed-touch-controls').dataset.hidden==='false'", 5);
+            assertFalse("Revealing fullscreen controls must not pause the video", (Boolean) js("document.querySelector('video').paused"));
+            screenshot("BiliSpeed-live-fullscreen-controls");
+            SystemClock.sleep(3400);
+            await("document.getElementById('bilispeed-touch-controls').dataset.hidden==='true'", 5);
             instrumentation.runOnMainSync(activity::onBackPressed);
             assertFalse(activity.fullscreenForTesting());
             await("document.querySelector('video').playbackRate === 5", 5);

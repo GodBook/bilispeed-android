@@ -102,7 +102,7 @@ try {
                 & $adb -s $DeviceSerial shell wm dismiss-keyguard
             }
             $testClasses = if ($TestFilter) { $TestFilter } else {
-                'app.bilispeed.browser.PlaybackInstrumentationTest,app.bilispeed.browser.DesktopLayoutInstrumentationTest,app.bilispeed.browser.UpdateInstrumentationTest'
+                'app.bilispeed.browser.PlaybackInstrumentationTest,app.bilispeed.browser.DesktopLayoutInstrumentationTest,app.bilispeed.browser.PlayerControlsInstrumentationTest,app.bilispeed.browser.UpdateInstrumentationTest'
             }
             if ($RunLiveCheck) { $testClasses += ',app.bilispeed.browser.OfficialBilibiliSmokeTest' }
             if ($RunUpdateCheck) { $testClasses += ',app.bilispeed.browser.PublishedUpdateSmokeTest' }

@@ -1,0 +1,429 @@
+package app.bilispeed.browser;
+
+import android.app.Instrumentation;
+import android.accessibilityservice.AccessibilityServiceInfo;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.ActivityInfo;
+import android.graphics.Bitmap;
+import android.media.MediaCodec;
+import android.media.MediaExtractor;
+import android.media.MediaMuxer;
+import android.os.SystemClock;
+import android.util.Base64;
+import android.view.InputDevice;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
+
+import androidx.test.platform.app.InstrumentationRegistry;
+
+import org.json.JSONObject;
+import org.json.JSONTokener;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.FileInputStream;
+import java.nio.ByteBuffer;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.junit.Assert.*;
+
+/** Real WebView media and Android input checks for the touch player's controls. */
+public class PlayerControlsInstrumentationTest {
+    private final Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+    private MainActivity activity;
+    private static String media;
+    private long touchStart;
+    private boolean inputActive;
+    private float[] lastPoint;
+    private static final String HOST = ".bpx-player-video-area";
+    private static final String CONTROLS = "document.getElementById('bilispeed-touch-controls')";
+
+    @Before public void launch() throws Exception {
+        Context context = instrumentation.getTargetContext();
+        context.getSharedPreferences("playback", Context.MODE_PRIVATE).edit().clear().commit();
+        context.getSharedPreferences("updates", Context.MODE_PRIVATE).edit().putBoolean("automatic", false).commit();
+        if (media == null) {
+            try (InputStream input = instrumentation.getContext().getAssets().open("flower.mp4")) {
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int length;
+                while ((length = input.read(buffer)) != -1) output.write(buffer, 0, length);
+                media = "data:video/mp4;base64," + Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP);
+            }
+        }
+        activity = (MainActivity) instrumentation.startActivitySync(new Intent(context, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        String html = "<!doctype html><meta name='viewport' content='width=1100'>"
+                + "<style>body{margin:0;min-width:1100px}#mirror-vdcon{width:1100px;display:flex}"
+                + ".left-container{width:750px}.right-container{width:350px}#playerWrap{height:450px}"
+                + ".bpx-player-container{height:100%;position:relative}.bpx-player-video-area{height:100%;overflow:hidden}"
+                + "#v{width:100%;height:100%}.bpx-player-control-wrap{position:absolute;bottom:0}"
+                + "</style><script>window.playerFixture=true;"
+                + "window.touchEvent=function(type,points){var target=document.querySelector('" + HOST + "');"
+                + "var touches=points.map(function(p){return new Touch({identifier:p[0],target:target,clientX:p[1],clientY:p[2]});});"
+                + "target.dispatchEvent(new TouchEvent(type,{bubbles:true,cancelable:true,touches:touches,targetTouches:touches,changedTouches:touches}));};"
+                + "</script><div id='app'><div id='mirror-vdcon'><div class='left-container'>"
+                + "<div class='video-info-container'><h1>触屏播放器测试</h1></div><div id='playerWrap'>"
+                + "<div id='bilibili-player'><div class='bpx-player-container'><div class='bpx-player-video-area'>"
+                + "<video id='v' playsinline muted preload='auto' src='" + media + "'></video>"
+                + "<div class='bpx-player-control-wrap'>官方控制栏</div></div></div></div></div>"
+                + "<div class='video-toolbar-container'>官方点赞、收藏</div><p>测试视频简介</p></div>"
+                + "<div class='right-container'><p style='height:900px'>推荐与评论</p></div></div></div>";
+        instrumentation.runOnMainSync(() -> {
+            activity.browserForTesting().stopLoading();
+            activity.browserForTesting().loadDataWithBaseURL("https://www.bilibili.com/video/__bilispeed_controls__/", html, "text/html", "UTF-8", null);
+        });
+        await("window.playerFixture && window.__BiliTouchPlayer && document.getElementById('v').readyState>=2 && " + CONTROLS);
+        js("window.v=document.getElementById('v');v.pause();v.currentTime=1;true");
+        await("!v.seeking && v.currentTime>0.9");
+    }
+
+    @After public void finish() {
+        if (inputActive && lastPoint != null) {
+            MotionEvent cancel = touchInput(MotionEvent.ACTION_CANCEL, lastPoint);
+            instrumentation.getUiAutomation().injectInputEvent(cancel, true); cancel.recycle();
+        }
+        if (activity != null) instrumentation.runOnMainSync(activity::finish);
+        instrumentation.waitForIdleSync();
+    }
+
+    private Object js(String script) throws Exception {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<String> result = new AtomicReference<>();
+        instrumentation.runOnMainSync(() -> activity.browserForTesting().evaluateJavascript(script, value -> {
+            result.set(value); latch.countDown();
+        }));
+        assertTrue("WebView did not respond", latch.await(6, TimeUnit.SECONDS));
+        return new JSONTokener(result.get()).nextValue();
+    }
+
+    private void await(String condition) throws Exception {
+        long deadline = SystemClock.elapsedRealtime() + 12000;
+        while (SystemClock.elapsedRealtime() < deadline) {
+            if (Boolean.TRUE.equals(js("Boolean(" + condition + ")"))) return;
+            SystemClock.sleep(100);
+        }
+        System.out.println("BILISPEED_CONTROL_DIAGNOSTIC=" + js("JSON.stringify({time:window.v&&v.currentTime,"
+                + "hidden:document.getElementById('bilispeed-touch-controls')&&document.getElementById('bilispeed-touch-controls').dataset.hidden,"
+                + "events:window.fullTouchTrace,viewport:{width:innerWidth,height:innerHeight}})"));
+        screenshot("BiliSpeed-player-failure");
+        fail("Condition timed out: " + condition);
+    }
+
+    private void click(String name) throws Exception {
+        js("document.querySelector('[data-bilispeed-control=\"" + name + "\"]').click();true");
+    }
+
+    private float[] point(String selector, double x, double y) throws Exception {
+        JSONObject bounds = new JSONObject((String) js("JSON.stringify((function(){var r=document.querySelector('" + selector
+                + "').getBoundingClientRect();return {x:r.left+r.width*" + x + ",y:r.top+r.height*" + y + ",width:innerWidth};})())"));
+        int[] position = new int[2];
+        float[] scale = new float[1];
+        instrumentation.runOnMainSync(() -> {
+            View surface = activity.fullscreenForTesting() ? activity.fullscreenViewForTesting() : activity.browserForTesting();
+            surface.getLocationOnScreen(position);
+            scale[0] = (float) (surface.getWidth() / bounds.optDouble("width"));
+            if (activity.fullscreenForTesting()) System.out.println("BILISPEED_FULL_INPUT=" + bounds + " native="
+                    + surface.getWidth() + "x" + surface.getHeight() + " at " + position[0] + "," + position[1]);
+        });
+        return new float[]{position[0] + (float) bounds.getDouble("x") * scale[0], position[1] + (float) bounds.getDouble("y") * scale[0]};
+    }
+
+    private void input(int action, float[] point) {
+        long now = SystemClock.uptimeMillis();
+        if (action == MotionEvent.ACTION_DOWN) touchStart = now;
+        lastPoint = point;
+        inputActive = action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL;
+        MotionEvent event = touchInput(action, point);
+        assertTrue(instrumentation.getUiAutomation().injectInputEvent(event, true));
+        event.recycle();
+        SystemClock.sleep(40);
+    }
+
+    private MotionEvent touchInput(int action, float[] point) {
+        return fingerInput(touchStart, SystemClock.uptimeMillis(), action, point[0], point[1]);
+    }
+
+    static MotionEvent fingerInput(long downTime, long eventTime, int action, float x, float y) {
+        MotionEvent.PointerProperties finger = new MotionEvent.PointerProperties();
+        finger.id = 0; finger.toolType = MotionEvent.TOOL_TYPE_FINGER;
+        MotionEvent.PointerCoords coordinates = new MotionEvent.PointerCoords();
+        coordinates.x = x; coordinates.y = y; coordinates.size = 1;
+        coordinates.pressure = action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL ? 0 : 1;
+        return MotionEvent.obtain(downTime, eventTime, action, 1,
+                new MotionEvent.PointerProperties[]{finger}, new MotionEvent.PointerCoords[]{coordinates},
+                0, 0, 1, 1, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
+    }
+
+    private void tap(String selector) throws Exception {
+        instrumentation.runOnMainSync(() -> {
+            if (!activity.fullscreenForTesting()) activity.browserForTesting().requestFocus();
+        });
+        float[] location = point(selector, .5, .3);
+        input(MotionEvent.ACTION_DOWN, location); input(MotionEvent.ACTION_UP, location);
+    }
+
+    private void swipe(double fromX, double fromY, double toX, double toY) throws Exception {
+        float[] from = point(HOST, fromX, fromY), to = point(HOST, toX, toY);
+        input(MotionEvent.ACTION_DOWN, from);
+        for (int step = 1; step <= 6; step++) input(MotionEvent.ACTION_MOVE,
+                new float[]{from[0] + (to[0] - from[0]) * step / 6, from[1] + (to[1] - from[1]) * step / 6});
+        input(MotionEvent.ACTION_UP, to);
+    }
+
+    private void screenshot(String name) throws Exception {
+        instrumentation.waitForIdleSync();
+        SystemClock.sleep(350);
+        Bitmap bitmap = instrumentation.getUiAutomation().takeScreenshot();
+        assertNotNull(bitmap);
+        File file = new File(instrumentation.getTargetContext().getExternalFilesDir(null), name + ".png");
+        try (FileOutputStream output = new FileOutputStream(file)) { assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)); }
+        finally { bitmap.recycle(); }
+        System.out.println("BILISPEED_SCREENSHOT=" + file.getAbsolutePath());
+    }
+
+    @Test public void realSingleFingerSwipePreviewsThenSeeksWithoutPlaying() throws Exception {
+        js("window.touchTrace=[];['touchstart','touchmove','touchend','touchcancel','pointerdown','pointermove','pointercancel','resize'].forEach(function(name){"
+                + "window.addEventListener(name,function(e){touchTrace.push({type:e.type,target:e.target.id||e.target.className,cancelable:e.cancelable,"
+                + "touches:e.touches&&Array.from(e.touches).map(function(t){return {id:t.identifier,x:t.clientX,y:t.clientY};})});},true);});true");
+        float[] from = point(HOST, .25, .3), to = point(HOST, .65, .3);
+        input(MotionEvent.ACTION_DOWN, from);
+        input(MotionEvent.ACTION_MOVE, new float[]{(from[0] + to[0]) / 2, from[1]});
+        input(MotionEvent.ACTION_MOVE, to);
+        System.out.println("BILISPEED_GESTURE_TRACE=" + js("JSON.stringify({events:touchTrace,feedback:document.getElementById('bilispeed-seek-feedback').outerHTML,"
+                + "host:document.querySelector('.bpx-player-video-area').getBoundingClientRect().toJSON(),action:getComputedStyle(document.querySelector('.bpx-player-video-area')).touchAction})"));
+        assertEquals(1, ((Number) js("v.currentTime")).doubleValue(), .15);
+        assertFalse((Boolean) js("document.getElementById('bilispeed-seek-feedback').hidden"));
+        input(MotionEvent.ACTION_UP, to);
+        await("!v.seeking && v.currentTime > 1.5");
+        assertEquals(1 + .4 * ((Number) js("v.duration")).doubleValue(), ((Number) js("v.currentTime")).doubleValue(), .2);
+        assertTrue((Boolean) js("v.paused"));
+        // Stay outside Android's system back-gesture zones at the display edges.
+        swipe(.85, .3, .15, .3);
+        await("!v.seeking && v.currentTime<0.1");
+        swipe(.15, .3, .85, .3);
+        swipe(.15, .3, .85, .3);
+        await("!v.seeking && Math.abs(v.duration-v.currentTime)<0.1");
+    }
+
+    @Test public void verticalMultitouchAndCancelledGesturesLeaveTimeAlone() throws Exception {
+        swipe(.5, .2, .5, .6);
+        assertEquals(1, ((Number) js("v.currentTime")).doubleValue(), .15);
+        js("touchEvent('touchstart',[[1,80,50]]);touchEvent('touchmove',[[1,220,50]]);touchEvent('touchcancel',[]);true");
+        assertEquals(1, ((Number) js("v.currentTime")).doubleValue(), .15);
+        js("touchEvent('touchstart',[[1,80,50]]);touchEvent('touchmove',[[1,220,50]]);"
+                + "touchEvent('touchstart',[[1,220,50],[2,250,60]]);touchEvent('touchend',[]);true");
+        assertEquals(1, ((Number) js("v.currentTime")).doubleValue(), .15);
+        assertTrue((Boolean) js("document.getElementById('bilispeed-seek-feedback').hidden"));
+    }
+
+    @Test public void volumeSliderUnmutesAndMuteRestoresAudibleVolume() throws Exception {
+        click("volume");
+        js("var range=document.querySelector('[data-bilispeed-control=volume-slider]');range.value=37;range.dispatchEvent(new Event('input',{bubbles:true}));true");
+        assertEquals(.37, ((Number) js("v.volume")).doubleValue(), .001);
+        assertFalse((Boolean) js("v.muted"));
+        click("mute"); assertTrue((Boolean) js("v.muted"));
+        click("mute"); assertFalse((Boolean) js("v.muted"));
+        assertEquals(.37, ((Number) js("v.volume")).doubleValue(), .001);
+        js("range.value=0;range.dispatchEvent(new Event('input',{bubbles:true}));true");
+        assertTrue((Boolean) js("v.muted && v.volume===0"));
+        click("mute");
+        assertTrue((Boolean) js("!v.muted && Math.abs(v.volume-.37)<.001"));
+        screenshot("BiliSpeed-player-volume");
+    }
+
+    @Test public void subtitleLanguagesAndOffOperateRealTextTracks() throws Exception {
+        js("window.zh=v.addTextTrack('subtitles','中文字幕','zh');zh.addCue(new VTTCue(0,5,'测试字幕'));"
+                + "window.en=v.addTextTrack('subtitles','English','en');en.addCue(new VTTCue(0,5,'Test caption'));true");
+        click("subtitles");
+        js("document.querySelectorAll('[data-bilispeed-control=subtitle-track]')[0].click();true");
+        await("zh.mode==='showing' && en.mode!=='showing' && document.querySelector('[data-bilispeed-control=subtitles]').getAttribute('aria-pressed')==='true'");
+        click("subtitles");
+        js("document.querySelectorAll('[data-bilispeed-control=subtitle-track]')[1].click();true");
+        await("en.mode==='showing' && zh.mode==='disabled'");
+        click("subtitles"); screenshot("BiliSpeed-player-subtitles"); click("subtitle-off");
+        await("en.mode==='disabled' && zh.mode==='disabled' && document.querySelector('[data-bilispeed-control=subtitles]').getAttribute('aria-pressed')==='false'");
+    }
+
+    @Test public void officialSubtitleItemsReceiveClicksAndStateChanges() throws Exception {
+        js("var root=document.createElement('div');root.className='bpx-player-ctrl-subtitle';"
+                + "root.innerHTML='<div class=\"bpx-player-ctrl-subtitle-close-switch bpx-state-active\">关闭</div>'"
+                + "+'<div class=\"bpx-player-ctrl-subtitle-major-content\"><div class=\"bpx-player-ctrl-subtitle-language-item\" data-lan=\"zh\">中文（自动生成）</div></div>';"
+                + "document.querySelector('.bpx-player-control-wrap').append(root);window.captionClicks=0;"
+                + "window.lang=root.querySelector('[data-lan]');window.off=root.querySelector('.bpx-player-ctrl-subtitle-close-switch');"
+                + "lang.onclick=function(){captionClicks++;lang.classList.add('bpx-state-active');off.classList.remove('bpx-state-active');};"
+                + "off.onclick=function(){captionClicks++;lang.classList.remove('bpx-state-active');off.classList.add('bpx-state-active');};true");
+        await("window.__BiliTouchPlayer && lang.isConnected");
+        js("window.__BiliTouchPlayer.refresh();true");
+        click("subtitles"); click("subtitle-language");
+        assertEquals(1, ((Number) js("captionClicks")).intValue());
+        await("document.querySelector('[data-bilispeed-control=subtitles]').getAttribute('aria-pressed')==='true'");
+        click("subtitles"); click("subtitle-off");
+        assertEquals(2, ((Number) js("captionClicks")).intValue());
+        js("lang.click();true");
+        await("document.querySelector('[data-bilispeed-control=subtitles]').getAttribute('aria-pressed')==='true'");
+    }
+
+    @Test public void fullscreenStartsHiddenTapRevealsAndOpenPanelKeepsControls() throws Exception {
+        tap("[data-bilispeed-control=fullscreen]");
+        await("document.fullscreenElement && innerWidth>innerHeight && " + CONTROLS + ".dataset.hidden==='true'");
+        dismissImmersiveHint(instrumentation);
+        instrumentation.runOnMainSync(() -> assertTrue(activity.fullscreenForTesting()));
+        assertEquals("hidden", js("getComputedStyle(" + CONTROLS + ").visibility"));
+        screenshot("BiliSpeed-player-fullscreen-hidden");
+        js("window.fullTouchTrace=[];['click','touchstart','touchmove','touchend','touchcancel','pointerdown','pointermove','pointercancel','mousedown','mousemove','mouseup','resize'].forEach(function(name){window.addEventListener(name,function(e){"
+                + "fullTouchTrace.push({type:e.type,pointer:e.pointerType,target:e.target.id||e.target.className,cancelable:e.cancelable,touches:e.touches&&Array.from(e.touches).map(function(t){return {x:t.clientX,y:t.clientY};})});},true);});true");
+        tap(HOST);
+        await(CONTROLS + ".dataset.hidden==='false'");
+        assertTrue((Boolean) js("v.paused"));
+        screenshot("BiliSpeed-player-fullscreen-controls");
+        SystemClock.sleep(3400);
+        await(CONTROLS + ".dataset.hidden==='true'");
+        tap(HOST); click("volume");
+        SystemClock.sleep(3400);
+        assertEquals("false", js(CONTROLS + ".dataset.hidden"));
+        click("close-panel");
+        SystemClock.sleep(3400);
+        await(CONTROLS + ".dataset.hidden==='true'");
+        js("window.fullTouchTrace=[];true");
+        swipe(.25, .3, .65, .3);
+        System.out.println("BILISPEED_FULL_GESTURE_TRACE=" + js("JSON.stringify({events:fullTouchTrace,time:v.currentTime,seeking:v.seeking,"
+                + "host:document.querySelector('.bpx-player-video-area').getBoundingClientRect().toJSON(),viewport:innerWidth,"
+                + "feedback:document.getElementById('bilispeed-seek-feedback').outerHTML})"));
+        await("!v.seeking && v.currentTime>1.5");
+        assertEquals("true", js(CONTROLS + ".dataset.hidden"));
+        tap(HOST);
+        await(CONTROLS + ".dataset.hidden==='false'");
+        float[] rangeStart = point("[data-bilispeed-control=seek]", .35, .5), rangeEnd = point("[data-bilispeed-control=seek]", .7, .5);
+        input(MotionEvent.ACTION_DOWN, rangeStart); input(MotionEvent.ACTION_MOVE, rangeEnd);
+        SystemClock.sleep(3400);
+        assertEquals("false", js(CONTROLS + ".dataset.hidden"));
+        input(MotionEvent.ACTION_UP, rangeEnd);
+        SystemClock.sleep(3400);
+        await(CONTROLS + ".dataset.hidden==='true'");
+        instrumentation.runOnMainSync(activity::onBackPressed);
+        await("!document.fullscreenElement && " + CONTROLS + ".dataset.hidden==='false'");
+    }
+
+    static void dismissImmersiveHint(Instrumentation instrumentation) {
+        if ("confirmed".equals(android.provider.Settings.Secure.getString(
+                instrumentation.getTargetContext().getContentResolver(), "immersive_mode_confirmations"))) return;
+        AccessibilityServiceInfo service = instrumentation.getUiAutomation().getServiceInfo();
+        service.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+        instrumentation.getUiAutomation().setServiceInfo(service);
+        long deadline = SystemClock.elapsedRealtime() + 4000;
+        while (SystemClock.elapsedRealtime() < deadline) {
+            for (AccessibilityWindowInfo window : instrumentation.getUiAutomation().getWindows()) {
+                AccessibilityNodeInfo root = window.getRoot();
+                if (root == null) continue;
+                for (AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByText("Got it")) {
+                    if (!"com.android.systemui".contentEquals(node.getPackageName())) continue;
+                    AccessibilityNodeInfo button = node;
+                    while (button != null && !button.isClickable()) button = button.getParent();
+                    if (button != null && button.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                        SystemClock.sleep(400); return;
+                    }
+                }
+            }
+            SystemClock.sleep(100);
+        }
+    }
+
+    @Test public void replacingVideoCancelsOldPreviewAndReusesOnlyOneToolbar() throws Exception {
+        click("volume");
+        js("touchEvent('touchstart',[[1,80,50]]);touchEvent('touchmove',[[1,220,50]]);"
+                + "var replacement=v.cloneNode(true);v.replaceWith(replacement);window.v=replacement;true");
+        await("v.readyState>=2 && " + CONTROLS + ".isConnected && document.getElementById('bilispeed-player-panel').hidden");
+        js("touchEvent('touchend',[]);true");
+        assertTrue((Boolean) js("v.currentTime<.1 && document.querySelectorAll('#bilispeed-touch-controls').length===1"));
+        assertTrue((Boolean) js("document.getElementById('bilispeed-seek-feedback').hidden"));
+        js("document.getElementById('playerWrap').remove();true");
+        await("!document.getElementById('bilispeed-touch-controls')");
+    }
+
+    @Test public void liveAndUnavailableSubtitlesHaveClearStates() throws Exception {
+        click("subtitles");
+        assertTrue((Boolean) js("document.getElementById('bilispeed-player-panel').textContent.includes('暂无可用字幕')"));
+        click("close-panel");
+        js("Object.defineProperty(v,'duration',{configurable:true,value:Infinity});v.dispatchEvent(new Event('durationchange'));true");
+        assertTrue((Boolean) js("document.querySelector('[data-bilispeed-control=seek]').disabled"));
+        assertEquals("直播", js("document.querySelector('[data-bilispeed-control=time]').textContent"));
+        swipe(.25, .3, .65, .3);
+        assertEquals(1, ((Number) js("v.currentTime")).doubleValue(), .15);
+    }
+
+    @Test public void rotationKeepsControlsContainedAndOriginalLayoutRetainsZoom() throws Exception {
+        assertContained();
+        instrumentation.runOnMainSync(() -> {
+            assertFalse(activity.browserForTesting().getSettings().supportZoom());
+            assertFalse(activity.browserForTesting().getSettings().getBuiltInZoomControls());
+            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        });
+        await("innerWidth>innerHeight");
+        assertContained();
+        instrumentation.runOnMainSync(() -> activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));
+        await("innerHeight>innerWidth");
+        assertContained();
+        screenshot("BiliSpeed-player-portrait");
+        instrumentation.runOnMainSync(() -> {
+            activity.setTouchLayout(false);
+            assertTrue(activity.browserForTesting().getSettings().supportZoom());
+            assertTrue(activity.browserForTesting().getSettings().getBuiltInZoomControls());
+        });
+    }
+
+    @Test public void portraitVideoUsesItsRealAspectRatioWithoutFillingTheWholePage() throws Exception {
+        File movie = new File(instrumentation.getTargetContext().getCacheDir(), "player-portrait-fixture.mp4");
+        MediaExtractor extractor = new MediaExtractor();
+        MediaMuxer muxer = new MediaMuxer(movie.getAbsolutePath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+        try (android.content.res.AssetFileDescriptor asset = instrumentation.getContext().getAssets().openFd("flower.mp4")) {
+            extractor.setDataSource(asset.getFileDescriptor(), asset.getStartOffset(), asset.getDeclaredLength());
+            int[] tracks = new int[extractor.getTrackCount()];
+            for (int index = 0; index < tracks.length; index++) {
+                tracks[index] = muxer.addTrack(extractor.getTrackFormat(index)); extractor.selectTrack(index);
+            }
+            muxer.setOrientationHint(90); muxer.start();
+            ByteBuffer buffer = ByteBuffer.allocateDirect(2 * 1024 * 1024);
+            MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+            while (extractor.getSampleTrackIndex() >= 0) {
+                buffer.clear(); int length = extractor.readSampleData(buffer, 0);
+                if (length < 0) break;
+                info.set(0, length, extractor.getSampleTime(), extractor.getSampleFlags());
+                muxer.writeSampleData(tracks[extractor.getSampleTrackIndex()], buffer, info); extractor.advance();
+            }
+            muxer.stop();
+        } finally { extractor.release(); muxer.release(); }
+        String portrait;
+        try (InputStream input = new FileInputStream(movie)) {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192]; int length;
+            while ((length = input.read(buffer)) != -1) output.write(buffer, 0, length);
+            portrait = "data:video/mp4;base64," + Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP);
+        }
+        js("v.src='" + portrait + "';v.load();true");
+        await("v.readyState>=2 && v.videoHeight>v.videoWidth");
+        js("v.currentTime=1;true");
+        await("!v.seeking && v.currentTime>.9");
+        await("document.getElementById('playerWrap').getBoundingClientRect().height>innerWidth");
+        assertContained();
+        assertTrue((Boolean) js("document.getElementById('playerWrap').getBoundingClientRect().height <= innerHeight*.68+2"));
+        screenshot("BiliSpeed-player-portrait-video");
+    }
+
+    private void assertContained() throws Exception {
+        assertTrue((Boolean) js("(function(){var h=document.querySelector('" + HOST + "').getBoundingClientRect();"
+                + "return document.documentElement.scrollWidth<=innerWidth+2 && getComputedStyle(v).objectFit==='contain' && "
+                + "Array.from(document.querySelectorAll('#bilispeed-touch-controls>button')).every(function(b){var r=b.getBoundingClientRect();"
+                + "return r.width>=40 && r.height>=44 && r.left>=h.left-1 && r.right<=h.right+1 && r.bottom<=h.bottom+1;});})()"));
+    }
+}

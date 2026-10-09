@@ -1,5 +1,24 @@
 # Android 16 验收记录
 
+## 1.2.1：触摸进度、音量、字幕与全屏适配
+
+发布前功能验收日期：2026-10-09。以下功能记录对应原签名的发布前测试构建；正式发布附件的校验另行记录。
+
+- assembleRelease、lintRelease、三个 JavaScript 文件的语法检查和构建脚本 PowerShell 语法检查通过；Android lint 为 0 errors / 4 warnings。
+- 播放器与布局专项：OK (14 tests)，包含 10 项新播放器检查和 4 项原有布局检查。通过真实单指滑动预览、松手跳转、前后边界、垂直滑动、双指与取消手势、音量与静音恢复、字幕语言与关闭、换视频、全屏默认隐藏、点击唤出、3 秒隐藏、设置面板保持显示、按住进度条保持显示、松手后隐藏，以及真实竖向视频比例和横竖屏适配。记录为 artifacts/player-final-build-and-check.txt。
+- 播放核心与实站检查：OK (11 tests)，其中 8 项覆盖网站重置速度、替换视频、iframe、Shadow DOM、全屏倍速与屏幕唤醒、后台暂停、迟到的自动播放、大型页面状态恢复和批量 DOM 更新；3 项真实 B 站检查覆盖首页、视频、搜索、热门、动态和官方登录表单。实际视频上通过暂停、滑动跳转、音量、进度滑杆、继续播放、全屏唤出与隐藏和返回；5x 属性及实际播放进度推进通过。记录为 artifacts/player-regression-and-live-check.txt。
+- 窄屏追加检查：600 × 1400 / density 300，CSS 宽度 320，音量、旋转后控件边界和原版缩放设置检查：OK (2 tests)。记录为 artifacts/player-small-screen-check.txt。
+- 宽屏追加检查：1800 × 1200 / density 160，CSS 全屏宽度 1800，覆盖超过原来 1000px 排版断点后的隐藏、唤出、滑动与滑杆操作：OK (1 test)。记录为 artifacts/player-wide-landscape-check.txt。测试完成后已恢复模拟器原来的 720 × 1600 / density 300 设置。
+- 实站全屏尺寸额外复核：OK (1 test)，记录为 artifacts/player-live-fullscreen-layout-check.txt。确认官方全屏容器、视频区域、画面元素均为 808 × 384 CSS 像素，匹配当时的全屏视口；触屏控制栏位于该区域底部。
+- 合计 29 项相关检查通过。初始模拟器的 System UI 无响应弹窗、首次全屏系统提示和触摸测试的系统返回手势边缘影响过输入检查；最终记录使用恢复后的系统状态、明确的单指输入，并避开系统返回手势起点。Android 16 大屏可能保留当前屏幕方向，最初的宽屏竖屏检查进入了全屏并隐藏控件，但未满足测试中的横屏断言；最终在宽屏横屏窗口完成上述操作验收。
+- APK Signature Scheme v2 校验通过；与 1.2.0 的证书 SHA-256 一致：e2d8ed51e71288c8f2a0ea81e3f7ac23aba499d59ed6d7eace205e78960f94b3。已经成功覆盖安装，APK、update.json 与 SHA256SUMS.txt 的版本、大小和哈希一致。
+- 版本：versionName 1.2.1，versionCode 5，targetSdk 36，minSdk 26。发布前测试 APK：artifacts/BiliSpeed-1.2.1-tested-Android16.apk，1772229 字节。
+- 测试 APK SHA-256：43DD2BE2376DB4E6C262EF554CE9EDDFE8728DE2E2D182C7A2116D3A9D2BB90B。
+
+测试使用 Android 16 / API 36 x86_64 模拟器，未连接实体手机。字幕语言切换已用真实 HTML5 TextTrack 与官方菜单结构的本地夹具验证；此次实站样本没有可用字幕，验证的是无字幕提示，未使用真实账号验证登录后或会员字幕资源。本次未重新验收所有倍速档位的实际时间比例，1.2.0 记录的逐档计时问题仍未确认修复。
+
+界面已截图检查，包括 artifacts/BiliSpeed-player-volume.png、BiliSpeed-player-portrait-video.png、BiliSpeed-player-small-volume.png、BiliSpeed-player-wide-fullscreen-controls.png、BiliSpeed-live-volume.png、BiliSpeed-live-subtitles.png 和 BiliSpeed-live-fullscreen-controls.png。
+
 ## 1.2.0：电脑端网页与触屏操作
 
 - 默认入口和 User-Agent 改为电脑端；旧版手机网页偏好不再影响启动。手机端首页、视频、番剧、搜索、动态和空间链接转到相应电脑端，保留 query 和 fragment。

@@ -9,8 +9,6 @@
     const attribute = 'data-bilispeed-touch';
     let scheduled = false;
     let previousPage = '';
-    const controlledVideos = new WeakSet();
-    let editingProgress = false;
     const stylesheet = `
 #bilispeed-touch-controls, #bilispeed-video-tabs { display: none; }
 @media (max-width: 1000px) {
@@ -105,7 +103,8 @@
     html[${attribute}] #mirror-vdcon .left-container > * { order: 5; }
     html[${attribute}] #mirror-vdcon #playerWrap {
         order: 0; width: 100% !important; min-width: 0 !important;
-        height: calc(56.25vw + 46px) !important; max-height: none !important;
+        height: calc(var(--bilispeed-video-height, 56.25vw) + var(--bilispeed-sending-height, 46px)) !important;
+        max-height: none !important;
         margin: 0 !important; flex: none !important;
     }
     html[${attribute}] #mirror-vdcon .video-info-container { order: 1; }
@@ -136,23 +135,6 @@
     html[${attribute}] #mirror-vdcon .video-toolbar-left > * { min-height: 40px; margin-right: 8px !important; }
     html[${attribute}] #bilibili-player { width: 100% !important; height: 100% !important; }
     html[${attribute}] .bpx-player-container:not(.bpx-state-fullscreen):not(.bpx-state-web) { width: 100% !important; height: 100% !important; }
-    html[${attribute}] #bilibili-player .bpx-player-control-wrap { display: none !important; }
-    html[${attribute}] #bilispeed-touch-controls {
-        display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
-        position: absolute; bottom: 0; left: 0; right: 0; z-index: 100;
-        padding: 4px 8px; box-sizing: border-box; color: #fff;
-        background: linear-gradient(transparent, rgba(0,0,0,.72)); font: 13px sans-serif;
-    }
-    html[${attribute}] #bilispeed-touch-controls input {
-        flex: 0 0 100%; width: 100%; min-width: 0; height: 24px; margin: 0; accent-color: #e8557f;
-    }
-    html[${attribute}] #bilispeed-touch-controls button {
-        min-width: 44px; min-height: 40px; padding: 0 8px; border: 0; border-radius: 6px;
-        background: transparent; color: #fff; font: 15px sans-serif; touch-action: manipulation;
-    }
-    html[${attribute}] #bilispeed-touch-controls button:focus-visible { outline: 2px solid #e8557f; }
-    html[${attribute}] #bilispeed-touch-controls [data-bilispeed-control="play"] { font-size: 20px; }
-    html[${attribute}] #bilispeed-touch-controls [data-bilispeed-control="time"] { flex: 1; padding-left: 8px; }
     html[${attribute}] .bpx-player-sending-bar { min-width: 0 !important; }
     html[${attribute}] .bpx-player-video-info { display: none !important; }
     html[${attribute}] #bilispeed-video-tabs { display: flex; border-bottom: 1px solid #eee; }
@@ -257,112 +239,6 @@
         toolbar.after(tabs);
     }
 
-    function currentVideo() {
-        const player = document.getElementById('bilibili-player');
-        if (!player) return null;
-        const videos = Array.from(player.querySelectorAll('video')).filter(video => video.isConnected);
-        return videos.find(video => !video.paused && !video.ended) || videos.find(video => video.readyState >= 1) || videos[0];
-    }
-
-    function timeLabel(seconds) {
-        if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
-        const total = Math.floor(seconds);
-        const hours = Math.floor(total / 3600);
-        const minutes = Math.floor(total / 60) % 60;
-        const secondsText = String(total % 60).padStart(2, '0');
-        return (hours ? hours + ':' + String(minutes).padStart(2, '0') : String(minutes).padStart(2, '0')) + ':' + secondsText;
-    }
-
-    function updateControls() {
-        const controls = document.getElementById('bilispeed-touch-controls');
-        const video = currentVideo();
-        if (!controls || !video) return;
-        const play = controls.querySelector('[data-bilispeed-control="play"]');
-        const seek = controls.querySelector('input');
-        const playing = !video.paused && !video.ended;
-        const seekable = Number.isFinite(video.duration) && video.duration > 0;
-        const label = playing ? '暂停视频' : '播放视频';
-        if (play.getAttribute('aria-label') !== label) {
-            play.setAttribute('aria-label', label);
-            play.textContent = playing ? 'Ⅱ' : '▶';
-        }
-        seek.disabled = !seekable;
-        if (!editingProgress) seek.value = seekable ? Math.round(video.currentTime / video.duration * 1000) : 0;
-        const position = editingProgress && seekable ? Number(seek.value) / 1000 * video.duration : video.currentTime;
-        const time = controls.querySelector('[data-bilispeed-control="time"]');
-        const text = video.duration === Infinity ? '直播' : timeLabel(position) + ' / ' + timeLabel(video.duration);
-        if (time.textContent !== text) time.textContent = text;
-        const fullscreen = controls.querySelector('[data-bilispeed-control="fullscreen"]');
-        const fullText = document.fullscreenElement ? '退出全屏' : '全屏';
-        if (fullscreen.textContent !== fullText) fullscreen.textContent = fullText;
-    }
-
-    function touchControls() {
-        const video = currentVideo();
-        if (!video) return;
-        const host = video.closest('.bpx-player-video-area') || document.getElementById('bilibili-player');
-        let controls = document.getElementById('bilispeed-touch-controls');
-        if (!controls) {
-            controls = document.createElement('div');
-            controls.id = 'bilispeed-touch-controls';
-            controls.setAttribute('role', 'group');
-            controls.setAttribute('aria-label', '视频播放控制');
-            ['click', 'dblclick', 'pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend'].forEach(name => {
-                controls.addEventListener(name, event => event.stopPropagation());
-            });
-            const seek = document.createElement('input');
-            seek.type = 'range'; seek.min = '0'; seek.max = '1000'; seek.step = '1';
-            seek.setAttribute('data-bilispeed-control', 'seek');
-            seek.setAttribute('aria-label', '播放进度');
-            seek.addEventListener('input', () => { editingProgress = true; updateControls(); });
-            seek.addEventListener('change', () => {
-                const active = currentVideo();
-                if (active && Number.isFinite(active.duration) && active.duration > 0) {
-                    try { active.currentTime = Number(seek.value) / 1000 * active.duration; } catch (_) {}
-                }
-                editingProgress = false;
-                updateControls();
-            });
-            seek.addEventListener('pointercancel', () => { editingProgress = false; updateControls(); });
-            controls.appendChild(seek);
-            const play = document.createElement('button');
-            play.type = 'button';
-            play.setAttribute('data-bilispeed-control', 'play');
-            play.addEventListener('click', event => {
-                event.preventDefault();
-                const active = currentVideo();
-                if (!active) return;
-                if (active.paused || active.ended) active.play().catch(() => updateControls());
-                else active.pause();
-            });
-            controls.appendChild(play);
-            const time = document.createElement('span');
-            time.setAttribute('data-bilispeed-control', 'time');
-            controls.appendChild(time);
-            const fullscreen = document.createElement('button');
-            fullscreen.type = 'button';
-            fullscreen.setAttribute('data-bilispeed-control', 'fullscreen');
-            fullscreen.addEventListener('click', event => {
-                event.preventDefault();
-                const active = currentVideo();
-                if (!active) return;
-                if (document.fullscreenElement) document.exitFullscreen().catch(() => updateControls());
-                else {
-                    const target = active.closest('.bpx-player-container') || active;
-                    if (target.requestFullscreen) target.requestFullscreen().catch(() => updateControls());
-                }
-            });
-            controls.appendChild(fullscreen);
-            host.appendChild(controls);
-        } else if (controls.parentElement !== host) host.appendChild(controls);
-        if (!controlledVideos.has(video)) {
-            controlledVideos.add(video);
-            ['timeupdate', 'play', 'pause', 'ended', 'loadedmetadata', 'durationchange', 'seeking', 'seeked'].forEach(name => {
-                video.addEventListener(name, updateControls, { passive: true });
-            });
-        }
-        updateControls();
-    }
 
     function refresh() {
         const html = document.documentElement;
@@ -390,7 +266,8 @@
             // Give the official player a chance to resize its video/danmaku canvas.
             setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
         }
-        if (page === 'video') { videoTabs(); touchControls(); }
+        if (page === 'video') videoTabs();
+        if (window.__BiliTouchPlayer) window.__BiliTouchPlayer.refresh();
     }
 
     function schedule() {
@@ -406,6 +283,5 @@
     window.addEventListener('popstate', schedule);
     window.addEventListener('hashchange', schedule);
     window.addEventListener('pageshow', schedule);
-    document.addEventListener('fullscreenchange', updateControls);
     refresh();
 })();

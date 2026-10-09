@@ -161,7 +161,7 @@ public class MainActivity extends Activity {
         // player; the separate preference only controls its touch-friendly layout.
         touchLayout = preferences.getBoolean("touchLayout", true);
         injection = readAsset("speed-controller.js");
-        touchInjection = readAsset("desktop-touch.js");
+        touchInjection = readAsset("desktop-touch.js") + "\n" + readAsset("player-controls.js");
         buildInterface();
         configureBrowser();
         updater = new AppUpdater(this);
@@ -341,7 +341,8 @@ public class MainActivity extends Activity {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setUseWideViewPort(!touchLayout);
         settings.setLoadWithOverviewMode(!touchLayout);
-        settings.setBuiltInZoomControls(true);
+        settings.setSupportZoom(!touchLayout);
+        settings.setBuiltInZoomControls(!touchLayout);
         settings.setDisplayZoomControls(false);
         settings.setSupportMultipleWindows(true);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
@@ -475,7 +476,8 @@ public class MainActivity extends Activity {
 
     private String controllerInitialState() {
         return "window.__BILI_SPEED_INITIAL__=" + selectedRate + ";window.__BILI_SPEED_SUSPENDED__="
-                + !foreground + ";window.__BILI_TOUCH_ENABLED__=" + touchLayout + ";\n";
+                + !foreground + ";window.__BILI_TOUCH_ENABLED__=" + touchLayout
+                + ";window.__BILI_TOUCH_FULLSCREEN__=" + (fullscreenView != null) + ";\n";
     }
 
     private void injectIntoPage() {
@@ -854,6 +856,9 @@ public class MainActivity extends Activity {
         preferences.edit().putBoolean("touchLayout", enabled).apply();
         browser.getSettings().setUseWideViewPort(!enabled);
         browser.getSettings().setLoadWithOverviewMode(!enabled);
+        browser.getSettings().setSupportZoom(!enabled);
+        browser.getSettings().setBuiltInZoomControls(!enabled);
+        browser.setInitialScale(0);
         updateBrowserLayout();
         updateDocumentScript();
         browser.reload();
@@ -978,6 +983,7 @@ public class MainActivity extends Activity {
         if (fullscreenView != null) { callback.onCustomViewHidden(); return; }
         fullscreenView = view;
         fullscreenCallback = callback;
+        root.setBackgroundColor(Color.BLACK);
         previousOrientation = getRequestedOrientation();
         fullscreenHost.addView(view, new FrameLayout.LayoutParams(-1, -1));
         fullscreenHost.setVisibility(View.VISIBLE);
@@ -985,6 +991,7 @@ public class MainActivity extends Activity {
         updateBrowserLayout();
         setSystemBarsFullscreen(true);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        notifyTouchFullscreen();
         root.post(this::positionFloating);
     }
 
@@ -992,6 +999,7 @@ public class MainActivity extends Activity {
         if (fullscreenView == null) return;
         fullscreenHost.removeView(fullscreenView);
         fullscreenView = null;
+        root.setBackgroundColor(Color.WHITE);
         fullscreenHost.setVisibility(View.GONE);
         browser.setVisibility(View.VISIBLE);
         updateBrowserLayout();
@@ -1000,7 +1008,14 @@ public class MainActivity extends Activity {
         if (callback != null) callback.onCustomViewHidden();
         setSystemBarsFullscreen(false);
         setRequestedOrientation(previousOrientation);
+        notifyTouchFullscreen();
         root.post(this::positionFloating);
+    }
+
+    private void notifyTouchFullscreen() {
+        if (destroyed || !isBiliHttps(browser.getUrl())) return;
+        browser.evaluateJavascript("window.__BiliTouchPlayer && window.__BiliTouchPlayer.setFullscreen("
+                + (fullscreenView != null) + ");", null);
     }
 
     private void setSystemBarsFullscreen(boolean fullscreen) {
@@ -1030,7 +1045,7 @@ public class MainActivity extends Activity {
         if (floating == null || root.getWidth() == 0) return;
         String prefix = positionPrefix();
         floating.setTranslationX(dp(8) + preferences.getFloat(prefix + "x", 1) * (maxFloatX() - dp(8)));
-        floating.setTranslationY(dp(8) + preferences.getFloat(prefix + "y", 0.84f) * (maxFloatY() - dp(8)));
+        floating.setTranslationY(dp(8) + preferences.getFloat(prefix + "y", fullscreenView != null ? 0.14f : 0.84f) * (maxFloatY() - dp(8)));
     }
     private void saveFloatingPosition() {
         String prefix = positionPrefix();
@@ -1125,6 +1140,7 @@ public class MainActivity extends Activity {
     WebView browserForTesting() { return browser; }
     Dialog speedDialogForTesting() { return speedDialog; }
     boolean fullscreenForTesting() { return fullscreenView != null; }
+    View fullscreenViewForTesting() { return fullscreenView; }
 
     private TextView text(String value, int size, int color) {
         TextView view = new TextView(this);
