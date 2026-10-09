@@ -18,6 +18,15 @@
 
 候选安装包：artifacts/tested-1.2.3/BiliSpeed-1.2.3-Android16.apk，versionName 1.2.3 / versionCode 7，1782609 字节，targetSdk 36 / minSdk 26，发布构建关闭调试。SHA-256：0A73F1B6DAD1468073542990775BCC7F519BEA2E517EDAD1A9FADC590194B381。APK Signature Scheme v2 校验通过；证书 SHA-256 与原版本一致：e2d8ed51e71288c8f2a0ea81e3f7ac23aba499d59ed6d7eace205e78960f94b3。APK、update.json 和 SHA256SUMS.txt 来自同一构建，已在模拟器覆盖安装验证。
 
+正式发布与附件验证（2026-10-09）：
+
+- [v1.2.3 Release](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.3) 于北京时间 20:44:56 发布为最新正式版本，非草稿、非预发布；附件齐全：BiliSpeed-1.2.3-Android16.apk、update.json 和 SHA256SUMS.txt。源码标签指向 072bd7c5487c838d6ecd0608ec7eed1e2ffb2908。
+- 从已提交源码重新执行 assembleRelease 和 lintRelease 通过，lint 为 0 errors / 4 warnings。正式 APK 为 1782609 字节，SHA-256：A3C5DED1F5E6E9AA4CD6B5F36C9748467116A96C2A6AD9158E776A21FFE1AA5E。原签名与 APK Signature Scheme v2 校验通过，versionName 1.2.3 / versionCode 7，targetSdk 36 / minSdk 26，关闭调试。
+- 正式 APK 与上述候选 APK 按解包条目比较，72 个条目中仅 META-INF/version-control-info.textproto 的 Git 提交记录发生变化，应用代码、资源和播放器脚本一致；正式包内的提交记录与源码标签一致。候选包及其更新信息、校验文件保存在 artifacts/tested-1.2.3/。
+- 重新下载全部三个正式附件，逐个核对本机文件、GitHub 附件摘要及文件大小，均一致；更新版本、包名、发布说明、APK 哈希和校验文件匹配。update.json 为 1405 字节，SHA-256：5775D70DBB1A0780C5CD0FEAD6E645B23C1A7593544E603EA92725599CF65179；SHA256SUMS.txt 为 97 字节，SHA-256：27E807A49854007CA72821627CF302955E7FA6449A557EC19A60796944FB8944。下载文件保存在 artifacts/release-verify-1.2.3/。
+- 不使用 GitHub 登录凭据请求应用实际使用的 https://github.com/GodBook/bilispeed-android/releases/latest/download/update.json 地址，确认返回 1.2.3 / code 7，与发布附件逐字节一致；再从其中的正式公开 APK 地址下载，哈希、大小、版本和原签名校验通过。
+- 本轮发布后验证在主机执行，没有另行重跑 Android 上的正式附件下载 instrumentation；上述实体设备、真实账号和逐档播放计时限制仍保留。
+
 ## 1.2.2：页面恢复、排版开销与内容入口状态
 
 验收日期：2026-10-09。以下功能记录对应原签名的发布前测试构建；正式发布附件与更新渠道验证在本节末另行记录。
