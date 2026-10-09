@@ -19,6 +19,14 @@
 
 界面已截图检查，包括 artifacts/BiliSpeed-player-volume.png、BiliSpeed-player-portrait-video.png、BiliSpeed-player-small-volume.png、BiliSpeed-player-wide-fullscreen-controls.png、BiliSpeed-live-volume.png、BiliSpeed-live-subtitles.png 和 BiliSpeed-live-fullscreen-controls.png。
 
+正式发布与更新渠道验证（2026-10-09）：
+
+- [v1.2.1 Release](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.1) 已发布为最新正式版本，三个附件齐全：BiliSpeed-1.2.1-Android16.apk、update.json 和 SHA256SUMS.txt。源码标签指向 00aaa20895cb8254b22aba3a0e25fba7d95d3411。
+- 正式 APK 为 1772229 字节，SHA-256：DBD66AAA7B07BABD7D19421E4F405B0F02A187496321C9B11E57FACC93B946E5。原签名与 APK Signature Scheme v2 校验通过。
+- 正式 APK 与上述测试 APK 解包逐项比较，仅 META-INF/version-control-info.textproto 的 Git 版本记录发生变化，应用代码、资源和播放器脚本一致。正式构建的 Git 版本信息对应发布源码提交。
+- GitHub 服务器给出的文件摘要与本机构建一致；重新下载全部三个附件，版本、文件大小、SHA-256、更新信息和校验文件全部匹配。
+- Android 16 上读取真实 GitHub 更新渠道并实际下载正式 APK，按上一版本 code 4 校验新版 code 5 的版本、包名、大小、哈希和原签名：OK (1 test)。记录为 artifacts/published-update-test-1.2.1.txt。测试设备使用能够访问 GitHub 的临时代理，全程保留 HTTPS 证书校验；测试完成后恢复网络设置。
+
 ## 1.2.0：电脑端网页与触屏操作
 
 - 默认入口和 User-Agent 改为电脑端；旧版手机网页偏好不再影响启动。手机端首页、视频、番剧、搜索、动态和空间链接转到相应电脑端，保留 query 和 fragment。
