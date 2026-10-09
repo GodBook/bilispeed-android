@@ -17,6 +17,13 @@
 
 最终候选包：artifacts/tested-1.2.4/BiliSpeed-1.2.4-Android16.apk，versionName 1.2.4 / versionCode 8，1793518 字节，targetSdk 36 / minSdk 26，发布构建关闭调试。SHA-256：77B868CC61B48803294EAEB3870F9A8BBF07169FA59D028B312C07A1B0DE9BE7。APK Signature Scheme v2 校验通过，原证书 SHA-256：e2d8ed51e71288c8f2a0ea81e3f7ac23aba499d59ed6d7eace205e78960f94b3。APK、update.json 与 SHA256SUMS.txt 的版本、大小和哈希一致，已在模拟器覆盖安装。候选包与正式发布包的源码提交记录及附件校验另行记录。
 
+正式发布与附件验证（2026-10-09）：
+
+- [v1.2.4 Release](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.4) 于北京时间 22:43:43 发布为最新正式版本，非草稿、非预发布。源码标签与包内提交记录均为 714a0e386e4e6d28673ddcc299eb9ce4e6635c7f，已推送至 GitHub。
+- 从已提交源码重新构建并通过 lint、原签名与 v2 签名校验。正式 APK 为 1793518 字节，SHA-256：6CB842D540F1EDAAC422A89829C143DF0EFDC22B39E1D7394E5E060FD33E8D8F。对比候选 APK 的 76 个解包条目，仅 META-INF/version-control-info.textproto 的 Git 提交记录变化，代码、资源与脚本一致。
+- 正式附件齐全：BiliSpeed-1.2.4-Android16.apk、update.json 与 SHA256SUMS.txt。全部重新下载并核对本机文件、GitHub 附件摘要与大小，均匹配。update.json 为 1686 字节、SHA-256：893799427CFA37AC0E6B47756BA8629A029D172D146520FE5790F205033F3A01；SHA256SUMS.txt 为 97 字节、SHA-256：5C888A051D9646EE11C5D0C92E25134D1BEAA06F50D2E4157BF0CF07274FD23B。记录保存在 artifacts/release-verify-1.2.4/。
+- 未使用 GitHub 登录凭据请求应用实际使用的 https://github.com/GodBook/bilispeed-android/releases/latest/download/update.json，返回 1.2.4 / code 8，内容与正式附件一致；再从其中的公开 APK 地址下载，大小、哈希和原签名均匹配。记录保存在 artifacts/public-update-verify-1.2.4/。发布后渠道检查在主机完成，没有另行重跑 Android 下载 instrumentation；前述全屏双击、解码和真实账号限制仍保留。
+
 ## 1.2.3：按钮外观、双击和弹幕 / 个人中心适配
 
 验收日期：2026-10-09。以下功能记录对应原签名的发布前候选 APK；正式发布附件与更新渠道验证在本节末另行记录。
