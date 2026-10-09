@@ -17,6 +17,14 @@
 
 测试环境为 Android 16 / API 36 x86_64 模拟器，WebView 133.0.6943.137；未连接实体手机，未使用真实账号验证登录或会员字幕，未测量耗电。查询次数的下降仅表示脚本减少了相应扫描，不能换算为整机性能或续航提升百分比。
 
+正式发布与附件验证（2026-10-09）：
+
+- [v1.2.2 Release](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.2) 已发布为最新正式版本，附件齐全：BiliSpeed-1.2.2-Android16.apk、update.json 和 SHA256SUMS.txt。源码标签指向 4e19cfe2bb7821eed14e1e3ef7e969095243563f。
+- 正式 APK 为 1774321 字节，SHA-256：C79BF7DA803B11492842450EE0A39A43B172B8D27FCC0D281A9951674E5EB0E2。原签名与 APK Signature Scheme v2 校验通过。
+- 正式 APK 与上述测试 APK 按解包条目比较，72 个条目中仅 META-INF/version-control-info.textproto 的 Git 提交记录发生变化，应用代码、资源和播放器脚本一致。正式构建的提交信息对应发布源码标签。
+- GitHub 返回的三个附件摘要与本机文件一致；重新下载全部三个附件后，版本、大小、SHA-256、更新信息和校验文件全部匹配。下载文件保存在 artifacts/release-verify-1.2.2/。
+- 已请求应用实际使用的 https://github.com/GodBook/bilispeed-android/releases/latest/download/update.json 地址，确认返回 1.2.2 / code 6，下载地址、大小和哈希均与正式 APK 匹配。本轮发布后验证在主机执行，没有另行重跑 Android 上的正式附件下载 instrumentation。
+
 ## 1.2.1：触摸进度、音量、字幕与全屏适配
 
 发布前功能验收日期：2026-10-09。以下功能记录对应原签名的发布前测试构建；正式发布附件的校验另行记录。
