@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>我的 - B站倍速浏览器</title>
+    <link rel="stylesheet" href="/__bilispeed__/my-page.css">
+    <script src="/__bilispeed__/my-page.js" defer></script>
+</head>
+<body>
+    <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <symbol id="tv" viewBox="0 0 32 32"><path d="m11 3 4 5 4-5M22 27H8a4 4 0 0 1-4-4V12a4 4 0 0 1 4-4h16a4 4 0 0 1 4 4v5M24 23a4 4 0 0 1 4 4m-9-4a9 9 0 0 1 9-9"/></symbol>
+        <symbol id="scan" viewBox="0 0 32 32"><path d="M5 11V7a2 2 0 0 1 2-2h5m8 0h5a2 2 0 0 1 2 2v4M5 21v4a2 2 0 0 0 2 2h5m8 0h5a2 2 0 0 0 2-2v-4M4 16h24"/></symbol>
+        <symbol id="shirt" viewBox="0 0 32 32"><path d="m10 4-7 6 5 6 3-2v14h10V14l3 2 5-6-7-6a7 7 0 0 1-12 0Z"/></symbol>
+        <symbol id="moon" viewBox="0 0 32 32"><path d="M15 3a13 13 0 1 0 14 17A13 13 0 0 1 15 3Z"/></symbol>
+        <symbol id="edit" viewBox="0 0 32 32"><path d="m21 4 7 7-16 16H5v-7ZM20 27h8"/></symbol>
+        <symbol id="chevron" viewBox="0 0 32 32"><path d="m12 6 10 10-10 10"/></symbol>
+        <symbol id="download" viewBox="0 0 32 32"><path d="M27 13v13a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h8l4 4h7M16 12v11m-5-5 5 5 5-5"/></symbol>
+        <symbol id="history" viewBox="0 0 32 32"><path d="M5 15A12 12 0 1 1 8 25M2 11l3 5 5-4M17 7v10h7"/></symbol>
+        <symbol id="star" viewBox="0 0 32 32"><path d="m16 3 4 9 10 1-8 7 2 10-8-5-8 5 2-10-8-7 10-1Z"/></symbol>
+        <symbol id="later" viewBox="0 0 32 32"><path d="M27 16A12 12 0 1 0 26 23M23 13l4 4 4-4M13 10l8 6-8 6Z"/></symbol>
+        <symbol id="user-avatar" viewBox="0 0 32 32"><circle cx="16" cy="11" r="5"/><path d="M6 28v-3a10 10 0 0 1 20 0v3"/></symbol>
+    </svg>
+    <main class="my-page">
+        <nav class="tools" aria-label="常用工具">
+            <a href="https://live.bilibili.com/" aria-label="直播"><svg><use href="#tv"/></svg></a>
+            <button id="open-link" aria-label="打开视频链接"><svg><use href="#scan"/></svg></button>
+            <a href="https://www.bilibili.com/h5/mall/home?navhide=1" aria-label="个性装扮"><svg><use href="#shirt"/></svg></a>
+            <button id="night" aria-label="切换夜间模式" aria-pressed="false"><svg><use href="#moon"/></svg></button>
+        </nav>
+        <section class="profile" aria-label="账号资料">
+            <a class="avatar" id="avatar-link" href="https://account.bilibili.com/account/home" aria-label="登录或查看头像">
+                <svg id="avatar-placeholder"><use href="#user-avatar"/></svg>
+                <img id="avatar" alt="我的头像" hidden referrerpolicy="no-referrer">
+            </a>
+            <div class="identity">
+                <div class="name-row">
+                    <a id="username" href="https://account.bilibili.com/account/home">登录 / 注册</a>
+                    <a class="edit" href="https://account.bilibili.com/account/setting" aria-label="编辑资料"><svg><use href="#edit"/></svg></a>
+                    <span class="level" id="level" hidden></span>
+                </div>
+                <span class="member" id="member">登录后查看账号</span>
+                <div class="balance"><span>B币：<span id="bcoin">—</span></span><span>硬币：<span id="coins">—</span></span></div>
+            </div>
+            <a id="space" class="space" href="https://account.bilibili.com/account/home">空间<svg><use href="#chevron"/></svg></a>
+        </section>
+        <nav class="stats" aria-label="我的动态与关注">
+            <a id="dynamic-link" href="https://account.bilibili.com/account/home"><span id="dynamics">—</span><small>动态</small></a>
+            <a id="following-link" href="https://account.bilibili.com/account/home"><span id="following">—</span><small>关注</small></a>
+            <a id="follower-link" href="https://account.bilibili.com/account/home"><span id="followers">—</span><small>粉丝</small></a>
+        </nav>
+        <nav class="shortcuts" aria-label="我的视频">
+            <button id="offline"><svg><use href="#download"/></svg><span>离线缓存</span></button>
+            <a href="https://www.bilibili.com/account/history" data-account-link><svg><use href="#history"/></svg><span>历史记录</span></a>
+            <a id="favorites" href="https://account.bilibili.com/account/home" data-account-link><svg><use href="#star"/></svg><span>我的收藏</span></a>
+            <a href="https://www.bilibili.com/watchlater/#/list" data-account-link><svg><use href="#later"/></svg><span>稍后再看</span></a>
+        </nav>
+        <div class="status" role="status"><span id="status">正在加载账号信息…</span><button id="retry" hidden>重新加载</button></div>
+    </main>
+    <dialog id="offline-dialog"><h2>离线缓存</h2><p>暂无离线视频。当前版本支持在线播放，暂不支持下载缓存。</p><button data-close>知道了</button></dialog>
+    <dialog id="link-dialog"><form id="link-form"><h2>打开视频链接</h2><label for="video-link">粘贴 B站链接或 BV 号</label><input id="video-link" required autocomplete="off" placeholder="https://www.bilibili.com/video/…"><p id="link-error" role="alert"></p><div class="dialog-actions"><button type="button" data-close>取消</button><button type="submit">打开</button></div></form></dialog>
+</body>
+</html>

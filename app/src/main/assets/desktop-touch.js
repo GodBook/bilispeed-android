@@ -2,6 +2,7 @@
     'use strict';
     // Only adapt the main page, never an embedded login/player document.
     if (window !== window.top || window.__BiliTouch || window.__BILI_TOUCH_ENABLED__ === false) return;
+    if (location.hostname === 'www.bilibili.com' && location.pathname === '/__bilispeed__/me') return;
     const supported = ['www.bilibili.com', 'bilibili.com', 'search.bilibili.com', 't.bilibili.com',
         'space.bilibili.com', 'account.bilibili.com', 'passport.bilibili.com'];
     if (!supported.includes(location.hostname)) return;
@@ -10,10 +11,11 @@
     let refreshTimer = null;
     let suspended = !!window.__BILI_SPEED_SUSPENDED__;
     let previousPage = '';
+    let hydrationStarted = 0;
     const managedDanmaku = new WeakSet();
-    const ownElements = '#bilispeed-touch-controls, #bilispeed-seek-feedback, #bilispeed-video-tabs, #bilispeed-touch-style, #bilispeed-player-style, [data-bilispeed-danmaku-header]';
+    const ownElements = '#bilispeed-touch-controls, #bilispeed-seek-feedback, #bilispeed-video-tabs, #bilispeed-touch-style, #bilispeed-player-style, #bilispeed-episodes-style, #bilispeed-episodes, [data-bilispeed-image], [data-bilispeed-danmaku-header]';
     const transientPlayerElements = '.bpx-player-dm-wrap, .bpx-player-dm-container, .bpx-player-subtitle-wrap';
-    const observation = { childList: true, subtree: true, attributes: true, attributeFilter: ['content'] };
+    const observation = { childList: true, subtree: true, attributes: true, attributeFilter: ['content', 'data-server-rendered'] };
     const stylesheet = `
 #bilispeed-touch-controls, #bilispeed-video-tabs { display: none; }
 html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-open] { display: block !important; }
@@ -354,6 +356,18 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
         return 'other';
     }
 
+    function isPageReady() {
+        if (document.readyState !== 'loading' && !document.querySelector('#app[data-server-rendered]')) return true;
+        if (!document.querySelector('#mirror-vdcon .video-toolbar-container')) return false;
+        if (!hydrationStarted) {
+            hydrationStarted = Date.now();
+            // If the official bootstrap itself fails, still expose usable
+            // controls and metadata instead of leaving skeletons forever.
+            setTimeout(schedule, 3500);
+        }
+        return Date.now() - hydrationStarted >= 3500;
+    }
+
     function videoTabs() {
         const toolbar = document.querySelector('#mirror-vdcon .video-toolbar-container');
         if (!toolbar) return;
@@ -362,10 +376,12 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
             tabs = document.createElement('nav');
             tabs.id = 'bilispeed-video-tabs';
             tabs.setAttribute('aria-label', '视频内容');
-            [['简介', '#v_desc'], ['评论', '#commentapp'], ['选集', '.video-pod-above-modules']].forEach(([label, selector]) => {
+            [['简介', '#v_desc, .video-desc-container'], ['评论', '#commentapp, bili-comments'],
+                ['选集', '#bilispeed-episodes[data-ready], .video-pod-above-modules, #multi_page, .video-sections']].forEach(([label, selector]) => {
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.textContent = label;
+                button.dataset.tab = label;
                 button.dataset.section = selector;
                 button.addEventListener('click', () => {
                     const section = document.querySelector(selector);
@@ -448,6 +464,15 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
         if (suspended) return;
         const html = document.documentElement;
         if (!html || !document.head) return;
+        // Official metadata still contains HTTP CDN images. Upgrade requests
+        // instead of weakening the WebView's mixed-content protection.
+        if (!document.getElementById('bilispeed-https-resources')) {
+            const secure = document.createElement('meta');
+            secure.id = 'bilispeed-https-resources';
+            secure.httpEquiv = 'Content-Security-Policy';
+            secure.content = 'upgrade-insecure-requests';
+            document.head.appendChild(secure);
+        }
         let viewport = document.querySelector('meta[name="viewport"]');
         if (!viewport) {
             viewport = document.createElement('meta');
@@ -471,7 +496,12 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
             // Give the official player a chance to resize its video/danmaku canvas.
             setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
         }
-        if (page === 'video') { videoTabs(); danmakuSettings(); }
+        // Avoid inserting extra children into server-rendered Vue markup
+        // while the official page is still parsing and hydrating it.
+        if (page === 'video' && isPageReady()) {
+            if (window.__BiliTouchVideo) window.__BiliTouchVideo.refresh();
+            videoTabs(); danmakuSettings();
+        }
         if (window.__BiliTouchPlayer) window.__BiliTouchPlayer.refresh();
     }
 
@@ -485,7 +515,8 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
         // Our progress labels and the site's animated overlays don't change the
         // page layout. Observing them would rescan the player on every update.
         if (target && target.closest(ownElements + ', ' + transientPlayerElements)) return false;
-        if (record.type === 'attributes') return target && target.matches('meta[name="viewport"]');
+        if (record.type === 'attributes') return target && (target.matches('meta[name="viewport"]')
+                || record.attributeName === 'data-server-rendered' && target.id === 'app');
         return [...record.addedNodes, ...record.removedNodes].some(node =>
             node.nodeType === 1 && !node.matches(ownElements + ', ' + transientPlayerElements));
     }
@@ -497,11 +528,12 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
         clearTimeout(refreshTimer);
         refreshTimer = null;
         observer.disconnect();
+        if (window.__BiliTouchVideo) window.__BiliTouchVideo.setSuspended(suspended);
         if (window.__BiliTouchPlayer) window.__BiliTouchPlayer.setSuspended(suspended);
         if (!suspended) { observer.observe(document, observation); refresh(); }
     }
 
-    Object.defineProperty(window, '__BiliTouch', { value: Object.freeze({ refresh, setSuspended }), configurable: false });
+    Object.defineProperty(window, '__BiliTouch', { value: Object.freeze({ refresh, setSuspended, isPageReady }), configurable: false });
     const observer = new MutationObserver(records => { if (records.some(requiresRefresh)) schedule(); });
     if (!suspended) observer.observe(document, observation);
     document.addEventListener('DOMContentLoaded', refresh, { once: true });

@@ -1,0 +1,60 @@
+:root { color-scheme: light; --surface: #fff; --ink: #18191c; --muted: #999; --pink: #e87599; --blue: #41a4c8; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface); color: var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Noto Sans", "Microsoft YaHei", sans-serif; }
+body.night { color-scheme: dark; --surface: #191a1f; --ink: #eee; --muted: #999ca6; }
+a { color: inherit; text-decoration: none; }
+button, input { font: inherit; }
+button { background: transparent; border: 0; color: inherit; cursor: pointer; }
+a, button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--pink); outline-offset: 3px; }
+a:active, button:active { opacity: .65; }
+svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; width: 28px; height: 28px; }
+[hidden] { display: none !important; }
+.icon-definitions { position: absolute; width: 0; height: 0; overflow: hidden; }
+.my-page { max-width: 640px; margin: auto; padding: 8px 14px 40px; }
+.tools { display: flex; justify-content: flex-end; gap: 5px; height: 58px; margin-bottom: 18px; }
+.tools a, .tools button { display: grid; place-items: center; width: 44px; height: 44px; color: #686868; }
+.night .tools a, .night .tools button { color: #b8bac2; }
+.tools svg { width: 26px; height: 26px; }
+.profile { display: flex; align-items: center; gap: 16px; min-height: 82px; position: relative; }
+.avatar { display: grid; place-items: center; flex: 0 0 72px; width: 72px; height: 72px; border-radius: 50%; overflow: hidden; background: #ebf5f8; color: #79afc2; }
+.avatar svg { width: 42px; height: 42px; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.identity { flex: 1; min-width: 0; padding-right: 2px; }
+.name-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+#username { font-size: 21px; line-height: 1.4; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.edit { display: grid; place-items: center; width: 22px; min-height: 36px; flex: none; color: var(--muted); }
+.edit svg { width: 20px; height: 20px; }
+.level { flex: none; color: #fff; font-size: 10px; font-weight: 600; line-height: 15px; padding: 0 3px; border-radius: 2px; background: #f4b280; }
+.member { display: inline-block; color: var(--pink); font-size: 12px; line-height: 17px; border: 1px solid var(--pink); border-radius: 3px; padding: 0 4px; margin: 5px 0 6px; }
+.balance { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.space { display: flex; align-items: center; gap: 2px; color: var(--muted); font-size: 14px; min-height: 44px; flex: none; }
+.space svg { width: 17px; height: 23px; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 26px 0 18px; }
+.stats a { text-align: center; position: relative; padding: 0 4px; }
+.stats a + a::before { content: ""; position: absolute; width: 1px; height: 24px; background: #e6e6e6; top: 14px; left: 0; }
+.stats span { display: block; font-size: 27px; line-height: 35px; font-variant-numeric: tabular-nums; }
+.stats small { display: block; color: var(--muted); font-size: 14px; }
+.shortcuts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 24px -6px 0; gap: 0; }
+.shortcuts a, .shortcuts button { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0; min-height: 68px; color: #444; font-size: 14px; }
+.night .shortcuts a, .night .shortcuts button { color: var(--ink); }
+.shortcuts svg { color: var(--blue); width: 29px; height: 29px; stroke-width: 1.8; }
+.status { color: var(--muted); font-size: 12px; margin-top: 22px; text-align: center; }
+.status button { color: var(--pink); min-height: 44px; padding: 0 10px; }
+dialog { width: calc(100% - 40px); max-width: 380px; border: 0; border-radius: 16px; padding: 24px; color: var(--ink); background: var(--surface); }
+dialog::backdrop { background: #0005; }
+dialog h2 { font-size: 19px; margin: 0 0 16px; }
+dialog p { color: var(--muted); }
+dialog button { color: var(--pink); min-height: 44px; padding: 0 10px; }
+dialog input { width: 100%; min-height: 44px; margin-top: 10px; padding: 8px; color: var(--ink); background: var(--surface); border: 1px solid var(--muted); border-radius: 6px; font-size: 16px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 12px; }
+#link-error { color: var(--pink); font-size: 13px; }
+@media (max-width: 350px) {
+    .profile { gap: 11px; }
+    .avatar { flex-basis: 62px; width: 62px; height: 62px; }
+    #username { font-size: 18px; }
+    .name-row { gap: 4px; }
+    .balance { gap: 2px 7px; font-size: 12px; }
+    .space { font-size: 12px; }
+    .shortcuts a, .shortcuts button { font-size: 13px; }
+}

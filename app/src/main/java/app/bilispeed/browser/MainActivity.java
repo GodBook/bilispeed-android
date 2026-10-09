@@ -74,6 +74,7 @@ import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
     static final String HOME = "https://www.bilibili.com/";
+    static final String MY_PAGE = HOME + "__bilispeed__/me";
     private static final int PINK = Color.rgb(232, 85, 127);
     private static final int INK = Color.rgb(40, 40, 48);
     private static final int MUTED = Color.rgb(116, 116, 125);
@@ -171,7 +172,7 @@ public class MainActivity extends Activity {
         // player; the separate preference only controls its touch-friendly layout.
         touchLayout = preferences.getBoolean("touchLayout", true);
         injection = readAsset("speed-controller.js");
-        touchInjection = readAsset("desktop-touch.js") + "\n" + readAsset("player-controls.js");
+        touchInjection = readAsset("desktop-touch.js") + "\n" + readAsset("video-details.js") + "\n" + readAsset("player-controls.js");
         buildInterface();
         configureBrowser();
         updater = new AppUpdater(this);
@@ -271,7 +272,7 @@ public class MainActivity extends Activity {
                     case 1: browser.loadUrl("https://www.bilibili.com/v/popular/all"); break;
                     case 2: showSearch(); break;
                     case 3: browser.loadUrl("https://t.bilibili.com/"); break;
-                    case 4: showAccountMenu(); break;
+                    case 4: browser.loadUrl(MY_PAGE); break;
                 }
             });
             navigationItems.add(tab);
@@ -407,6 +408,29 @@ public class MainActivity extends Activity {
         }
         updateDocumentScript();
         browser.setWebViewClient(new WebViewClient() {
+            @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                Uri uri = request.getUrl();
+                if (!"https".equals(uri.getScheme()) || !"www.bilibili.com".equals(uri.getHost())
+                        || uri.getPort() != -1 || !"GET".equals(request.getMethod())) return null;
+                String path = uri.getPath();
+                String asset, mime;
+                if ("/__bilispeed__/me".equals(path) && request.isForMainFrame()) {
+                    asset = "my-page.html"; mime = "text/html";
+                } else if ("/__bilispeed__/my-page.css".equals(path)) {
+                    asset = "my-page.css"; mime = "text/css";
+                } else if ("/__bilispeed__/my-page.js".equals(path)) {
+                    asset = "my-page.js"; mime = "application/javascript";
+                } else return null;
+                try {
+                    Map<String, String> headers = new LinkedHashMap<>();
+                    headers.put("Cache-Control", "no-store");
+                    headers.put("X-Content-Type-Options", "nosniff");
+                    headers.put("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; "
+                            + "connect-src https://api.bilibili.com; img-src https://*.hdslb.com https://*.bilibili.com; "
+                            + "base-uri 'none'; frame-ancestors 'none'");
+                    return new WebResourceResponse(mime, "UTF-8", 200, "OK", headers, getAssets().open(asset));
+                } catch (Exception ignored) { return null; }
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 if (destroyed || view != browser) return true;
                 // Frame requests must not replace the top-level page.
@@ -1111,7 +1135,8 @@ public class MainActivity extends Activity {
         else if ("t.bilibili.com".equals(host)) selected = 3;
         else if ("account.bilibili.com".equals(host) || "passport.bilibili.com".equals(host)
                 || "space.bilibili.com".equals(host) || ("www.bilibili.com".equals(host) && path != null
-                && (path.startsWith("/account/") || path.startsWith("/watchlater")))) selected = 4;
+                && (path.startsWith("/account/") || path.startsWith("/watchlater")
+                || path.equals("/__bilispeed__/me")))) selected = 4;
         else if ("www.bilibili.com".equals(host) && path != null) {
             if (path.startsWith("/v/popular")) selected = 1;
             else if (path.equals("/") || path.isEmpty()) selected = 0;
@@ -1156,14 +1181,6 @@ public class MainActivity extends Activity {
             return true;
         });
         dialog.show();
-    }
-
-    private void showAccountMenu() {
-        String[] items = {"登录 / 个人中心", "观看历史", "稍后再看"};
-        String[] urls = {"https://account.bilibili.com/account/home", "https://www.bilibili.com/account/history",
-                "https://www.bilibili.com/watchlater/#/list"};
-        new AlertDialog.Builder(this).setTitle("我的").setItems(items,
-                (dialog, which) -> browser.loadUrl(urls[which])).show();
     }
 
     private void openExternal(String url) {

@@ -32,7 +32,7 @@ public class OfficialBilibiliSmokeTest {
         instrumentation.runOnMainSync(() -> activity.browserForTesting().evaluateJavascript(script, value -> {
             result.set(value); latch.countDown();
         }));
-        assertTrue("No response from the website", latch.await(6, TimeUnit.SECONDS));
+        assertTrue("No response from the website", latch.await(15, TimeUnit.SECONDS));
         return new JSONTokener(result.get()).nextValue();
     }
 
@@ -44,6 +44,9 @@ public class OfficialBilibiliSmokeTest {
         }
         System.out.println("BILISPEED_LIVE_DIAGNOSTIC=" + js("JSON.stringify({url:location.href,title:document.title,"
                 + "state:window.__BiliSpeed&&window.__BiliSpeed.snapshot(),hidden:document.hidden,focus:document.hasFocus(),"
+                + "touch:!!window.__BiliTouch,details:!!window.__BiliTouchVideo,ready:window.__BiliTouch&&window.__BiliTouch.isPageReady(),"
+                + "serverMarkup:!!document.querySelector('#app[data-server-rendered]'),panel:document.getElementById('bilispeed-episodes')&&document.getElementById('bilispeed-episodes').innerText,"
+                + "season:window.__INITIAL_STATE__&&window.__INITIAL_STATE__.videoData&&{id:window.__INITIAL_STATE__.videoData.season_id,hasData:!!window.__INITIAL_STATE__.videoData.ugc_season},"
                 + "videos:Array.from(document.querySelectorAll('video')).map(function(v){return {paused:v.paused,time:v.currentTime,"
                 + "ready:v.readyState,duration:v.duration,error:v.error&&v.error.code};}),"
                 + "tapTrace:window.liveTapTrace,"
@@ -159,6 +162,59 @@ public class OfficialBilibiliSmokeTest {
                 + (width[0] + 2) + ";}).slice(0,12).map(function(e){var s=getComputedStyle(e);return {c:e.className,id:e.id,width:s.width,min:s.minWidth};})})"));
         assertEquals("Page must use the actual phone viewport", width[0], ((Number) js("innerWidth")).doubleValue(), 2);
         assertTrue("Page content extended beyond the phone", ((Number) js("document.documentElement.scrollWidth")).doubleValue() <= width[0] + 2);
+    }
+
+    private void pauseAutoplayForDetailsCheck() {
+        // These checks exercise navigation and loaded sources. Keep software
+        // GPU decoding from blocking the emulator while inspecting long lists.
+        instrumentation.runOnMainSync(() -> androidx.webkit.WebViewCompat.addDocumentStartJavaScript(
+                activity.browserForTesting(), "document.addEventListener('play',function(e){if(e.target instanceof HTMLMediaElement)e.target.pause();},true);",
+                java.util.Collections.singleton("https://www.bilibili.com")));
+    }
+
+    @Test public void officialVideoDetailsAndParts() throws Exception {
+        Context context = instrumentation.getTargetContext();
+        context.getSharedPreferences("playback", Context.MODE_PRIVATE).edit().clear().commit();
+        context.getSharedPreferences("updates", Context.MODE_PRIVATE).edit().putBoolean("automatic", false).commit();
+        activity = (MainActivity) instrumentation.startActivitySync(new Intent(context, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        try {
+            pauseAutoplayForDetailsCheck();
+            instrumentation.runOnMainSync(() -> activity.browserForTesting().loadUrl("https://www.bilibili.com/video/BV17x411w7KC/"));
+            await("document.querySelectorAll('#bilispeed-episodes a').length===10", 35);
+            await("document.querySelector('.up-avatar img') && document.querySelector('.up-avatar img').naturalWidth>0", 20);
+            System.out.println("BILISPEED_DETAIL_LOADED=" + js("JSON.stringify({parts:document.querySelectorAll('#bilispeed-episodes a').length,"
+                    + "avatar:document.querySelector('.up-avatar img').src,description:document.getElementById('v_desc').innerText.length})"));
+            js("document.querySelectorAll('video').forEach(function(v){v.pause();});true");
+            tapElement("#bilispeed-episodes a:nth-child(2)");
+            await("location.search.includes('p=2') && window.__INITIAL_STATE__ && window.__INITIAL_STATE__.cid===275431", 35);
+            await("document.querySelector('#bilispeed-episodes [aria-current]') && document.querySelector('#bilispeed-episodes [aria-current]').href.includes('p=2')", 15);
+            await("document.getElementById('v_desc') && document.getElementById('v_desc').innerText.length>100", 10);
+            System.out.println("BILISPEED_PART_SWITCHED=" + js("JSON.stringify({url:location.href,cid:window.__INITIAL_STATE__.cid,selected:document.querySelector('#bilispeed-episodes [aria-current]').href})"));
+            screenshot("BiliSpeed-video-parts-fixed");
+        } finally { instrumentation.runOnMainSync(activity::finish); }
+    }
+
+    @Test public void officialCollectionSwitchesToAnotherVideo() throws Exception {
+        Context context = instrumentation.getTargetContext();
+        context.getSharedPreferences("playback", Context.MODE_PRIVATE).edit().clear().commit();
+        context.getSharedPreferences("updates", Context.MODE_PRIVATE).edit().putBoolean("automatic", false).commit();
+        activity = (MainActivity) instrumentation.startActivitySync(new Intent(context, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        try {
+            pauseAutoplayForDetailsCheck();
+            instrumentation.runOnMainSync(() -> activity.browserForTesting().loadUrl("https://www.bilibili.com/video/BV12gpt6UER4/"));
+            await("document.querySelectorAll('#bilispeed-episodes a').length>100", 35);
+            assertTrue((Boolean) js("document.querySelector('#bilispeed-episodes h2').textContent.includes('英雄联盟整活小剧场')"));
+            assertTouchViewport();
+            System.out.println("BILISPEED_LIVE_COLLECTION=" + js("JSON.stringify({count:document.querySelectorAll('#bilispeed-episodes a').length,current:document.querySelector('#bilispeed-episodes [aria-current]').href})"));
+            js("document.querySelector('#bilispeed-episodes').scrollIntoView({block:'center'});true");
+            screenshot("BiliSpeed-collection-fixed");
+            tapElement("#bilispeed-episodes a:first-child");
+            await("location.pathname.includes('BV1xXtTeZEVR') && window.__INITIAL_STATE__ && window.__INITIAL_STATE__.cid===25861685381", 35);
+            await("document.querySelector('#bilispeed-episodes [aria-current]') && document.querySelector('#bilispeed-episodes [aria-current]').href.includes('BV1xXtTeZEVR')", 20);
+            System.out.println("BILISPEED_COLLECTION_SWITCHED=" + js("JSON.stringify({url:location.href,cid:window.__INITIAL_STATE__.cid,title:document.querySelector('h1').textContent})"));
+        } finally { instrumentation.runOnMainSync(activity::finish); }
     }
 
     @Test public void officialDesktopSearchAndPopularFitPhone() throws Exception {
