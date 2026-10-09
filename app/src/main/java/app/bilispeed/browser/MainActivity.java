@@ -31,6 +31,7 @@ import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.CookieManager;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.SslErrorHandler;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -109,6 +110,8 @@ public class MainActivity extends Activity {
     private ScriptHandler documentScript;
     private String injection;
     private String touchInjection;
+    private String lastPageUrl = HOME;
+    private String recoveryUrl;
     private float selectedRate = 1;
     private boolean touchLayout;
     private boolean foreground;
@@ -130,7 +133,9 @@ public class MainActivity extends Activity {
             // Poll as a fallback for WebViews without the scoped message bridge.
             if ((!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) || fullscreenView != null)
                     && isBiliHttps(browser.getUrl())) {
-                browser.evaluateJavascript("window.__BiliSpeed ? JSON.stringify(window.__BiliSpeed.snapshot()) : null", value -> {
+                WebView checkedBrowser = browser;
+                checkedBrowser.evaluateJavascript("window.__BiliSpeed ? JSON.stringify(window.__BiliSpeed.snapshot()) : null", value -> {
+                    if (destroyed || !foreground || checkedBrowser != browser) return;
                     try {
                         Object parsed = new org.json.JSONTokener(value).nextValue();
                         if (parsed instanceof String) {
@@ -215,8 +220,7 @@ public class MainActivity extends Activity {
             root.post(this::positionFloating);
             return insets;
         });
-        browser = new WebView(this);
-        browser.setId(View.generateViewId());
+        browser = createBrowser();
         root.addView(browser, new FrameLayout.LayoutParams(-1, -1));
         fullscreenHost = new FrameLayout(this);
         fullscreenHost.setBackgroundColor(Color.BLACK);
@@ -230,13 +234,14 @@ public class MainActivity extends Activity {
         errorPanel.setBackgroundColor(Color.WHITE);
         TextView title = text("页面暂时打不开", 22, INK);
         title.setTypeface(null, Typeface.BOLD);
+        title.setGravity(Gravity.CENTER);
         errorPanel.addView(title);
         errorText = text("检查网络后重试", 14, MUTED);
         errorText.setGravity(Gravity.CENTER);
         errorText.setPadding(0, dp(16), 0, dp(22));
         errorPanel.addView(errorText);
         Button retry = button("重新加载", true);
-        retry.setOnClickListener(view -> browser.reload());
+        retry.setOnClickListener(view -> reloadPage());
         errorPanel.addView(retry, new LinearLayout.LayoutParams(dp(180), dp(48)));
         errorPanel.setVisibility(View.GONE);
         root.addView(errorPanel, new FrameLayout.LayoutParams(-1, -1));
@@ -330,6 +335,7 @@ public class MainActivity extends Activity {
 
     @SuppressLint("SetJavaScriptEnabled")
     private void configureBrowser() {
+        WebView owner = browser;
         WebSettings settings = browser.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -355,7 +361,7 @@ public class MainActivity extends Activity {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             WebViewCompat.addWebMessageListener(browser, "BiliSpeedBridge", ORIGINS,
                     (view, message, sourceOrigin, isMainFrame, replyProxy) -> {
-                if (destroyed || !isBiliHttps(sourceOrigin.toString())) return;
+                if (destroyed || view != browser || !isBiliHttps(sourceOrigin.toString())) return;
                 try {
                     String payload = message.getData();
                     if (payload == null || payload.length() > 2048) return;
@@ -381,6 +387,7 @@ public class MainActivity extends Activity {
         updateDocumentScript();
         browser.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                if (destroyed || view != browser) return true;
                 // Frame requests must not replace the top-level page.
                 if (!request.isForMainFrame()) {
                     String scheme = request.getUrl().getScheme();
@@ -389,9 +396,12 @@ public class MainActivity extends Activity {
                 return navigate(request.getUrl().toString(), request.hasGesture());
             }
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                if (destroyed || view != browser) return;
                 String mapped = desktopUrl(url);
                 if (!mapped.equals(url)) { view.stopLoading(); view.loadUrl(mapped); return; }
                 view.getSettings().setMediaPlaybackRequiresUserGesture(!isBiliHttps(url));
+                rememberPageUrl(url);
+                recoveryUrl = null;
                 updateNavigation(url);
                 failedNavigation = false;
                 errorPanel.setVisibility(View.GONE);
@@ -401,34 +411,46 @@ public class MainActivity extends Activity {
                 updatePlaybackStatus();
             }
             @Override public void onPageFinished(WebView view, String url) {
+                if (destroyed || view != browser) return;
                 progress.setVisibility(View.GONE);
                 injectIntoPage();
                 CookieManager.getInstance().flush();
             }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) showPageError("检查网络连接，或稍后再试。\n" + error.getDescription());
+                if (!destroyed && view == browser && request.isForMainFrame()) showPageError("检查网络连接，或稍后再试。\n" + error.getDescription());
             }
             @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
-                if (request.isForMainFrame() && response.getStatusCode() >= 400) {
+                if (!destroyed && view == browser && request.isForMainFrame() && response.getStatusCode() >= 400) {
                     showPageError("网站返回 " + response.getStatusCode() + "，请稍后重试。\n可通过菜单重新加载或打开其他视频链接。");
                 }
             }
             @Override public void onReceivedSslError(WebView view, SslErrorHandler sslHandler, SslError error) {
                 sslHandler.cancel();
-                showPageError("网站的安全连接未能建立，请检查网络和系统时间。");
+                if (!destroyed && view == browser) showPageError("网站的安全连接未能建立，请检查网络和系统时间。");
+            }
+            @Override public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
+                if (destroyed || view != browser) return;
+                rememberPageUrl(url);
+                updateNavigation(url);
+            }
+            @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                if (!destroyed && view == browser) recoverBrowser(view);
+                return true;
             }
         });
         browser.setWebChromeClient(new WebChromeClient() {
             @Override public void onProgressChanged(WebView view, int value) {
+                if (destroyed || view != browser) return;
                 progress.setProgress(value);
                 progress.setVisibility(value < 100 && !failedNavigation ? View.VISIBLE : View.GONE);
             }
             @Override public void onShowCustomView(View view, CustomViewCallback callback) {
+                if (destroyed || owner != browser) { callback.onCustomViewHidden(); return; }
                 enterFullscreen(view, callback);
             }
-            @Override public void onHideCustomView() { exitFullscreen(); }
+            @Override public void onHideCustomView() { if (!destroyed && owner == browser) exitFullscreen(); }
             @Override public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, android.os.Message resultMsg) {
-                if (!isUserGesture) return false;
+                if (destroyed || view != browser || !isUserGesture) return false;
                 // A short-lived WebView resolves target=_blank without allowing app popups.
                 WebView popup = new WebView(MainActivity.this);
                 popupWindows.add(popup);
@@ -438,9 +460,15 @@ public class MainActivity extends Activity {
                 };
                 popup.setWebViewClient(new WebViewClient() {
                     @Override public boolean shouldOverrideUrlLoading(WebView ignored, WebResourceRequest request) {
+                        if (destroyed || owner != browser || closed.get()) return true;
                         String url = request.getUrl().toString();
                         if (!navigate(url, true) && "https".equals(request.getUrl().getScheme())) browser.loadUrl(desktopUrl(url));
                         handler.post(close);
+                        return true;
+                    }
+                    @Override public boolean onRenderProcessGone(WebView ignored, RenderProcessGoneDetail detail) {
+                        handler.removeCallbacks(close);
+                        close.run();
                         return true;
                     }
                 });
@@ -450,6 +478,7 @@ public class MainActivity extends Activity {
                 return true;
             }
             @Override public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (destroyed || webView != browser) { callback.onReceiveValue(null); return true; }
                 if (uploadCallback != null) uploadCallback.onReceiveValue(null);
                 uploadCallback = callback;
                 try { startActivityForResult(params.createIntent(), FILE_PICKER); }
@@ -462,9 +491,53 @@ public class MainActivity extends Activity {
             }
         });
         browser.setDownloadListener((url, userAgent, disposition, mimeType, length) -> {
+            if (destroyed || owner != browser) return;
             if (url.toLowerCase(Locale.ROOT).contains(".apk")) toast("请通过网页继续浏览");
             else openExternal(url);
         });
+    }
+
+    private WebView createBrowser() {
+        WebView view = new WebView(this);
+        view.setId(View.generateViewId());
+        return view;
+    }
+
+    private void rememberPageUrl(String url) {
+        if (url != null && url.length() <= 8192 && isHttps(url)) lastPageUrl = desktopUrl(url);
+    }
+
+    private void reloadPage() {
+        if (recoveryUrl != null) browser.loadUrl(recoveryUrl);
+        else browser.reload();
+    }
+
+    private void recoverBrowser(WebView failedBrowser) {
+        // A dead renderer's WebView cannot be reused, even for reload/saveState.
+        // Keep the Activity and app settings, and offer an explicit page retry.
+        recoveryUrl = lastPageUrl;
+        handler.removeCallbacks(heartbeat);
+        frameStates.clear();
+        setKeepingScreenOn(false);
+        if (speedDialog != null) speedDialog.dismiss();
+        if (uploadCallback != null) {
+            ValueCallback<Uri[]> pending = uploadCallback;
+            uploadCallback = null;
+            pending.onReceiveValue(null);
+        }
+        documentScript = null;
+        browser = createBrowser();
+        root.addView(browser, 0, new FrameLayout.LayoutParams(-1, -1));
+        exitFullscreen();
+        updateBrowserLayout();
+        configureBrowser();
+        root.removeView(failedBrowser);
+        failedBrowser.destroy();
+        showPageError("页面意外关闭，已保留当前链接和倍速设置。\n点击「重新加载」继续浏览。");
+        updateNavigation(recoveryUrl);
+        updatePlaybackStatus();
+        if (foreground) { browser.onResume(); handler.post(heartbeat); }
+        else browser.onPause();
     }
 
     private void updateDocumentScript() {
@@ -711,17 +784,17 @@ public class MainActivity extends Activity {
             switch (which) {
                 case 0: browser.loadUrl(HOME); break;
                 case 1: goBack(); break;
-                case 2: browser.reload(); break;
+                case 2: reloadPage(); break;
                 case 3: showOpenLink(); break;
                 case 4:
-                    String url = browser.getUrl();
+                    String url = recoveryUrl != null ? recoveryUrl : browser.getUrl();
                     if (url != null) {
                         ((android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(
                                 android.content.ClipData.newPlainText("视频链接", url));
                         toast("链接已复制");
                     }
                     break;
-                case 5: openExternal(browser.getUrl()); break;
+                case 5: openExternal(recoveryUrl != null ? recoveryUrl : browser.getUrl()); break;
                 case 6:
                     setTouchLayout(!touchLayout);
                     break;
@@ -836,7 +909,9 @@ public class MainActivity extends Activity {
     }
 
     static boolean isHttps(String url) {
-        if (url == null) return false;
+        // Data/blob URLs can contain megabytes of media or page state. Reject
+        // their scheme before asking URI to parse the entire string.
+        if (url == null || !url.regionMatches(true, 0, "https://", 0, 8)) return false;
         try {
             java.net.URI uri = new java.net.URI(url);
             return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null
@@ -861,7 +936,7 @@ public class MainActivity extends Activity {
         browser.setInitialScale(0);
         updateBrowserLayout();
         updateDocumentScript();
-        browser.reload();
+        reloadPage();
     }
 
     private void updateBrowserLayout() {
@@ -1108,8 +1183,8 @@ public class MainActivity extends Activity {
             // Large URLs or histories must not crash the app when it stops.
             if (parcel.dataSize() <= MAX_BROWSER_STATE_BYTES) state.putBundle("browserState", browserState);
         } finally { parcel.recycle(); }
-        String url = browser.getUrl();
-        if (isHttps(url) && url.length() <= 8192) state.putString("currentUrl", url);
+        String url = recoveryUrl != null ? recoveryUrl : browser.getUrl();
+        if (url != null && url.length() <= 8192 && isHttps(url)) state.putString("currentUrl", url);
         state.putFloat("selectedRate", selectedRate);
         super.onSaveInstanceState(state);
     }

@@ -1,5 +1,22 @@
 # Android 16 验收记录
 
+## 1.2.2：页面恢复、排版开销与内容入口状态
+
+验收日期：2026-10-09。以下功能记录对应原签名的发布前测试构建；正式发布附件与更新渠道验证在本节末另行记录。
+
+- assembleRelease、lintRelease、三个 JavaScript 文件的语法检查和两个 PowerShell 构建 / 发布脚本的语法检查通过；Android lint 为 0 errors / 4 warnings。最终构建记录：artifacts/optimization-final-build.txt。
+- 本轮分组、隔离复测后，按测试方法去重共 **51 项取得通过结果**：播放核心 16 项、触屏播放器 12 项、布局 5 项、更新校验 12 项、渲染进程恢复 3 项、真实 B 站 3 项。完整套件曾被模拟器中断，结果按下面的分轮记录汇总。
+- 第一轮播放器、布局和恢复专项：OK (20 tests)，记录为 artifacts/optimization-player-recovery-check.txt 和 optimization-player-recovery-tests.txt。覆盖单指滑动、取消手势、音量、字幕、视频替换、全屏隐藏 / 唤出、横竖屏、真实竖向视频比例、原版布局缩放，以及评论 / 选集延迟加载和工具栏替换。
+- 原正式 1.2.1 APK 的控件 / 弹幕更新测试记录为 artifacts/touch-optimization-baseline.txt；使用相同的 60 次文字更新，整页布局查询为 11 次，新版相应测试断言为 0 次。由 instrumentation 驱动的后台节点更新旧版查询为 3 次（artifacts/touch-background-baseline.txt），新版为 0 次；最终追加检查确认后台字幕轨道变化不会重建面板，返回后替换视频可播放且只有一套控制栏。
+- 三项恢复检查调用 WebViewRenderProcess.terminate() 结束真实独立渲染进程，验证多次恢复、当前链接的分 P / 时间 / fragment、倍速、浮动按钮位置、Cookies、待重试时保存链接、重试和新页面脚本；同时检查真实播放时清除屏幕唤醒、退出全屏、文件选择取消一次、共享弹窗清理，以及旧页面全屏 / 文件选择回调被取消。最终候选中的通过结果见 artifacts/optimization-final-core-and-live-check.txt；独立复核和截图见 optimization-recovery-visual-check.txt、BiliSpeed-browser-recovery.png。
+- 更新校验 12 项通过，播放核心中的 iframe、后台 iframe、页面批量更新和后台暂停等通过记录见 artifacts/optimization-core-recheck.txt。其余播放核心、倍速记忆、自定义值、Shadow DOM、换视频、后台迟到播放和分享解析的通过结果见 optimization-final-core-and-live-check.txt。大型历史状态最终隔离检查为 OK (1 test)，见 optimization-large-history-isolated-check.txt；不受信任来源的消息桥检查为 OK (1 test)，见 optimization-bridge-isolated-check.txt。
+- 主机 GPU 模式下逐档实际播放计时检查通过，涵盖 1x、1.25x、1.5x、2x、2.5x、3x、3.5x、4x 和 5x。记录见 artifacts/optimization-rate-and-fullscreen-diagnostics.txt。测量中位数分别约为 1.001、1.247、1.490、2.006、2.513、3.010、2.922、3.991、4.982；均在现有测试容差内，3.5x 一档仍有明显偏差。尚无充分证据将此前计时波动的改善归因于本轮代码，实体设备仍需复核。
+- 真实 B 站搜索、热门、动态和官方登录表单检查通过，记录见 artifacts/optimization-final-core-and-live-check.txt。真实首页、视频 5x、暂停 / 继续、滑动、音量、字幕入口、全屏和返回的最终隔离检查，与本地全屏回归一起为 OK (2 tests)，见 optimization-fullscreen-live-isolated-check.txt。
+- 过程中的两次完整测试中断对应 Windows 的 qemu-system-x86_64-headless.exe 访问冲突（0xc0000005），记录为 artifacts/optimization-emulator-crashes.txt。模拟器还出现蓝牙服务崩溃弹窗和 System UI 无响应弹窗，截图及窗口焦点检查确认它们遮挡页面和触摸输入。重启模拟器、使用主机 GPU 并处理系统弹窗后，对受影响的测试做了隔离复测；初次失败与中断记录保留，未把它们计入通过结果。
+- 发布前测试 APK：artifacts/BiliSpeed-1.2.2-tested-Android16.apk，versionName 1.2.2 / versionCode 6，1774321 字节，targetSdk 36 / minSdk 26。SHA-256：C2BC121D6402B2591B2D9CBD073ACEC69CA368F83D71338E6710810783839C3A。APK Signature Scheme v2 校验通过；证书 SHA-256 与 1.2.1 相同：e2d8ed51e71288c8f2a0ea81e3f7ac23aba499d59ed6d7eace205e78960f94b3。已在测试设备覆盖安装；测试构建的 APK、update.json 和 SHA256SUMS.txt 的版本、文件大小和哈希一致。
+
+测试环境为 Android 16 / API 36 x86_64 模拟器，WebView 133.0.6943.137；未连接实体手机，未使用真实账号验证登录或会员字幕，未测量耗电。查询次数的下降仅表示脚本减少了相应扫描，不能换算为整机性能或续航提升百分比。
+
 ## 1.2.1：触摸进度、音量、字幕与全屏适配
 
 发布前功能验收日期：2026-10-09。以下功能记录对应原签名的发布前测试构建；正式发布附件的校验另行记录。

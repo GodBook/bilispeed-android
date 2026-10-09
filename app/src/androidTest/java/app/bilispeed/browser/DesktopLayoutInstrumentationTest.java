@@ -169,4 +169,22 @@ public class DesktopLayoutInstrumentationTest {
         await("document.documentElement.hasAttribute('data-bilispeed-touch')");
         assertTrue((Boolean) js("innerWidth<600"));
     }
+
+    @Test public void videoSectionButtonsTrackLateContentAndToolbarReplacement() throws Exception {
+        fixture(true);
+        await("document.getElementById('bilispeed-video-tabs')");
+        js("document.querySelector('.video-pod-above-modules').remove();document.getElementById('commentapp').remove();true");
+        await("document.querySelector('[data-section=\".video-pod-above-modules\"]').disabled && "
+                + "document.querySelector('[data-section=\"#commentapp\"]').disabled");
+        js("var comments=document.createElement('div');comments.id='commentapp';document.body.append(comments);"
+                + "var collection=document.createElement('div');collection.className='video-pod-above-modules';document.body.append(collection);"
+                + "window.sectionViewed='';collection.scrollIntoView=function(){window.sectionViewed='collection';};"
+                + "var old=document.querySelector('.video-toolbar-container');var next=old.cloneNode(true);old.replaceWith(next);true");
+        await("!document.querySelector('[data-section=\".video-pod-above-modules\"]').disabled && "
+                + "!document.querySelector('[data-section=\"#commentapp\"]').disabled && "
+                + "document.getElementById('bilispeed-video-tabs').previousElementSibling===document.querySelector('.video-toolbar-container')");
+        js("document.querySelector('[data-section=\".video-pod-above-modules\"]').click();true");
+        assertEquals("collection", js("window.sectionViewed"));
+        assertEquals(1, ((Number) js("document.querySelectorAll('#bilispeed-video-tabs').length")).intValue());
+    }
 }

@@ -7,8 +7,12 @@
     if (!supported.includes(location.hostname)) return;
 
     const attribute = 'data-bilispeed-touch';
-    let scheduled = false;
+    let refreshTimer = null;
+    let suspended = !!window.__BILI_SPEED_SUSPENDED__;
     let previousPage = '';
+    const ownElements = '#bilispeed-touch-controls, #bilispeed-seek-feedback, #bilispeed-video-tabs, #bilispeed-touch-style, #bilispeed-player-style';
+    const transientPlayerElements = '.bpx-player-dm-wrap, .bpx-player-dm-container, .bpx-player-subtitle-wrap';
+    const observation = { childList: true, subtree: true, attributes: true, attributeFilter: ['content'] };
     const stylesheet = `
 #bilispeed-touch-controls, #bilispeed-video-tabs { display: none; }
 @media (max-width: 1000px) {
@@ -142,6 +146,8 @@
         flex: 1; min-height: 44px; border: 0; background: #fff; color: #61666d; font-size: 15px;
     }
     html[${attribute}] #bilispeed-video-tabs button:focus-visible { outline: 2px solid #e8557f; }
+    html[${attribute}] #bilispeed-video-tabs button:disabled { color: #9499a0; }
+    html[${attribute}] #bilispeed-video-tabs button:enabled:active { background: #fff0f5; color: #e8557f; }
 
     html[${attribute}] .search-layout,
     html[${attribute}] .search-header,
@@ -221,26 +227,40 @@
 
     function videoTabs() {
         const toolbar = document.querySelector('#mirror-vdcon .video-toolbar-container');
-        if (!toolbar || document.getElementById('bilispeed-video-tabs')) return;
-        const tabs = document.createElement('nav');
-        tabs.id = 'bilispeed-video-tabs';
-        tabs.setAttribute('aria-label', '视频内容');
-        [['简介', '#v_desc'], ['评论', '#commentapp'], ['选集', '.video-pod-above-modules']].forEach(([label, selector]) => {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.textContent = label;
-            button.addEventListener('click', () => {
-                const section = document.querySelector(selector);
-                if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (!toolbar) return;
+        let tabs = document.getElementById('bilispeed-video-tabs');
+        if (!tabs) {
+            tabs = document.createElement('nav');
+            tabs.id = 'bilispeed-video-tabs';
+            tabs.setAttribute('aria-label', '视频内容');
+            [['简介', '#v_desc'], ['评论', '#commentapp'], ['选集', '.video-pod-above-modules']].forEach(([label, selector]) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.textContent = label;
+                button.dataset.section = selector;
+                button.addEventListener('click', () => {
+                    const section = document.querySelector(selector);
+                    if (section) section.scrollIntoView({
+                        behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start'
+                    });
+                });
+                tabs.appendChild(button);
             });
-            if (label === '选集' && !document.querySelector(selector)) return;
-            tabs.appendChild(button);
+        }
+        // Comments and collections can mount after the toolbar. Keep their
+        // actions in sync when the official page replaces or loads a section.
+        tabs.querySelectorAll('button').forEach(button => {
+            const available = !!document.querySelector(button.dataset.section);
+            if (button.disabled !== !available) button.disabled = !available;
+            const title = available ? '查看' + button.textContent : '暂无' + button.textContent;
+            if (button.title !== title) button.title = title;
         });
-        toolbar.after(tabs);
+        if (tabs.previousElementSibling !== toolbar) toolbar.after(tabs);
     }
 
 
     function refresh() {
+        if (suspended) return;
         const html = document.documentElement;
         if (!html || !document.head) return;
         let viewport = document.querySelector('meta[name="viewport"]');
@@ -271,14 +291,34 @@
     }
 
     function schedule() {
-        if (scheduled) return;
-        scheduled = true;
-        setTimeout(() => { scheduled = false; refresh(); }, 100);
+        if (suspended || refreshTimer !== null) return;
+        refreshTimer = setTimeout(() => { refreshTimer = null; refresh(); }, 100);
     }
 
-    Object.defineProperty(window, '__BiliTouch', { value: Object.freeze({ refresh }), configurable: false });
-    const observer = new MutationObserver(schedule);
-    observer.observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['content'] });
+    function requiresRefresh(record) {
+        const target = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+        // Our progress labels and the site's animated overlays don't change the
+        // page layout. Observing them would rescan the player on every update.
+        if (target && target.closest(ownElements + ', ' + transientPlayerElements)) return false;
+        if (record.type === 'attributes') return target && target.matches('meta[name="viewport"]');
+        return [...record.addedNodes, ...record.removedNodes].some(node =>
+            node.nodeType === 1 && !node.matches(ownElements + ', ' + transientPlayerElements));
+    }
+
+    function setSuspended(value) {
+        const next = !!value;
+        if (next === suspended) return;
+        suspended = next;
+        clearTimeout(refreshTimer);
+        refreshTimer = null;
+        observer.disconnect();
+        if (window.__BiliTouchPlayer) window.__BiliTouchPlayer.setSuspended(suspended);
+        if (!suspended) { observer.observe(document, observation); refresh(); }
+    }
+
+    Object.defineProperty(window, '__BiliTouch', { value: Object.freeze({ refresh, setSuspended }), configurable: false });
+    const observer = new MutationObserver(records => { if (records.some(requiresRefresh)) schedule(); });
+    if (!suspended) observer.observe(document, observation);
     document.addEventListener('DOMContentLoaded', refresh, { once: true });
     window.addEventListener('popstate', schedule);
     window.addEventListener('hashchange', schedule);

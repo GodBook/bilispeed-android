@@ -351,6 +351,59 @@ public class PlayerControlsInstrumentationTest {
         await("!document.getElementById('bilispeed-touch-controls')");
     }
 
+    @Test public void controlsAndDanmakuUpdatesDoNotRescanThePage() throws Exception {
+        js("var danmaku=document.createElement('div');danmaku.className='bpx-player-dm-wrap';"
+                + "document.querySelector('.bpx-player-video-area').append(danmaku);true");
+        SystemClock.sleep(350);
+        js("window._touchQueries=0;window._queryBeforeProbe=document.querySelector;"
+                + "document.querySelector=function(selector){"
+                + "if(selector==='#mirror-vdcon .video-toolbar-container')window._touchQueries++;"
+                + "return window._queryBeforeProbe.call(this,selector);};"
+                + "window._churnCount=0;window._churn=setInterval(function(){"
+                + "danmaku.textContent='弹幕 '+_churnCount;"
+                + "document.querySelector('[data-bilispeed-control=time]').textContent='进度 '+_churnCount;"
+                + "if(++_churnCount===60)clearInterval(_churn);},16);true");
+        await("window._churnCount===60");
+        SystemClock.sleep(250);
+        int queries = ((Number) js("window._touchQueries")).intValue();
+        System.out.println("BILISPEED_TOUCH_CHURN_QUERIES=" + queries);
+        assertEquals("Control labels and danmaku must not trigger whole-page layout scans", 0, queries);
+    }
+
+    @Test public void backgroundDefersTouchLayoutScansAndDiscoversReplacementOnResume() throws Exception {
+        SystemClock.sleep(350);
+        click("subtitles");
+        js("window._subtitleBeforePause=document.querySelector('[data-subtitle-option]');true");
+        instrumentation.runOnMainSync(() -> instrumentation.callActivityOnPause(activity));
+        try {
+            js("window._touchQueries=0;window._queryBeforeProbe=document.querySelector;"
+                    + "document.querySelector=function(selector){"
+                    + "if(selector==='#mirror-vdcon .video-toolbar-container')window._touchQueries++;"
+                    + "return window._queryBeforeProbe.call(this,selector);};"
+                    + "v.addTextTrack('subtitles','后台新字幕','zh');"
+                    + "var replacement=v.cloneNode(false);replacement.id='replacement';v.replaceWith(replacement);"
+                    + "window._churnRoot=document.createElement('div');document.body.append(_churnRoot);true");
+            // onPause can throttle JavaScript timers. Drive the DOM changes from
+            // instrumentation instead so this checks the app's observation policy.
+            for (int index = 0; index < 8; index++) {
+                js("_churnRoot.append(document.createElement('div'));true");
+                SystemClock.sleep(175);
+            }
+            SystemClock.sleep(1500);
+            int queries = ((Number) js("window._touchQueries")).intValue();
+            System.out.println("BILISPEED_BACKGROUND_TOUCH_QUERIES=" + queries);
+            assertEquals("Touch layout must not keep scanning while the activity is paused", 0, queries);
+            assertTrue("Subtitle track events must not rebuild the background panel",
+                    (Boolean) js("_subtitleBeforePause===document.querySelector('[data-subtitle-option]')"));
+        } finally {
+            instrumentation.runOnMainSync(() -> instrumentation.callActivityOnResume(activity));
+        }
+        await("document.getElementById('replacement').readyState>=2 && !document.querySelector('[data-bilispeed-control=seek]').disabled");
+        click("play");
+        await("!document.getElementById('replacement').paused");
+        assertEquals(1, ((Number) js("document.querySelectorAll('#bilispeed-touch-controls').length")).intValue());
+    }
+
     @Test public void liveAndUnavailableSubtitlesHaveClearStates() throws Exception {
         click("subtitles");
         assertTrue((Boolean) js("document.getElementById('bilispeed-player-panel').textContent.includes('暂无可用字幕')"));

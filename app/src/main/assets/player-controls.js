@@ -23,7 +23,9 @@
     let feedbackTimer = null;
     let suppressClickUntil = 0;
     let subtitleRoot = null;
+    let suspended = !!window.__BILI_SPEED_SUSPENDED__;
     const subtitleObserver = new MutationObserver(() => {
+        if (suspended) return;
         update();
         if (panel === 'subtitles') renderSubtitles();
     });
@@ -142,7 +144,7 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
     function scheduleHide() {
         clearTimeout(hideTimer);
         hideTimer = null;
-        if (!fullscreen || !controls || controls.dataset.hidden === 'true') return;
+        if (suspended || !fullscreen || !controls || controls.dataset.hidden === 'true') return;
         hideTimer = setTimeout(() => {
             hideTimer = null;
             // Never remove a slider or a settings panel while it is being used.
@@ -204,7 +206,7 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
     }
 
     function renderSubtitles() {
-        if (!controls || panel !== 'subtitles') return;
+        if (suspended || !controls || panel !== 'subtitles') return;
         const state = subtitleState();
         const options = [];
         const off = button('subtitle-off', '关闭字幕', () => {
@@ -412,7 +414,7 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
     }
 
     function updateLayout() {
-        if (!video || !document.documentElement) return;
+        if (suspended || !video || !document.documentElement) return;
         const wrap = document.getElementById('playerWrap');
         if (wrap && !fullscreen) {
             const width = wrap.clientWidth || innerWidth;
@@ -432,7 +434,7 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
     }
 
     function update() {
-        if (!controls || !video) return;
+        if (suspended || !controls || !video) return;
         const full = isFullscreen();
         if (fullscreen !== full) {
             fullscreen = full; cancelPreview(); closePanel(); clearTimeout(hideTimer);
@@ -465,7 +467,7 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
     }
 
     function refresh() {
-        if (!document.head) return;
+        if (suspended || !document.head) return;
         if (!document.getElementById('bilispeed-player-style')) {
             const style = document.createElement('style');
             style.id = 'bilispeed-player-style'; style.textContent = stylesheet; document.head.appendChild(style);
@@ -475,7 +477,7 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
             if (host) { host.removeAttribute('data-bilispeed-player'); host.removeAttribute('data-controls-visible'); }
             if (controls) controls.remove();
             if (feedback) feedback.remove();
-            cancelPreview(); clearTimeout(hideTimer); subtitleObserver.disconnect(); subtitleRoot = null;
+            cancelPreview(); clearTimeout(hideTimer); clearTimeout(feedbackTimer); subtitleObserver.disconnect(); subtitleRoot = null;
             video = null; host = null; panel = '';
             return;
         }
@@ -512,7 +514,18 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
 
     function finishInteraction() { interacting = false; scheduleHide(); }
     function resized() { cancelPreview(); interacting = false; refresh(); scheduleHide(); }
+    function setSuspended(value) {
+        const next = !!value;
+        if (next === suspended) return;
+        suspended = next;
+        if (suspended) {
+            cancelPreview(); interacting = false; keyboardInteraction = false;
+            clearTimeout(hideTimer); clearTimeout(feedbackTimer);
+            subtitleObserver.disconnect(); subtitleRoot = null;
+        } else { refresh(); scheduleHide(); }
+    }
     Object.defineProperty(window, '__BiliTouchPlayer', { value: Object.freeze({ refresh,
+        setSuspended,
         setFullscreen(value) { nativeFullscreen = !!value; update(); }
     }), configurable: false });
     window.addEventListener('pointerup', finishInteraction, true);

@@ -292,12 +292,14 @@
 
     function configure(message) {
         if (typeof message.suspended === 'boolean') suspended = message.suspended;
+        if (window.__BiliTouch) window.__BiliTouch.setSuspended(suspended);
         if (suspended) stopHeartbeat(); else scheduleHeartbeat();
         return setRate(message.rate);
     }
 
     function pause() {
         suspended = true;
+        if (window.__BiliTouch) window.__BiliTouch.setSuspended(true);
         stopHeartbeat();
         videos.forEach(video => { try { video.pause(); } catch (_) {} });
         sendToFrames({ type: 'pause' });

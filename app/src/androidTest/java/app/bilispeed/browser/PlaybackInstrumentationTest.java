@@ -486,6 +486,9 @@ public class PlaybackInstrumentationTest {
         assertNull(MainActivity.resolveUrlInput("https://user:password@m.bilibili.com/"));
         assertNull(MainActivity.resolveUrlInput("这个文本不包含链接"));
         assertFalse(MainActivity.isHttps("https://m.bilibili.com/path with spaces"));
+        assertTrue(MainActivity.isHttps("HTTPS://www.bilibili.com:443/video/BV1xx411c7mD?p=2"));
+        assertFalse(MainActivity.isHttps("https:/www.bilibili.com/"));
+        assertFalse(MainActivity.isHttps("data:video/mp4;base64,AAAA"));
         assertFalse(MainActivity.isBiliHttps("https://m.bilibili.com:8443/"));
         assertTrue(MainActivity.isBiliHttps("https://m.bilibili.com:443/"));
     }
