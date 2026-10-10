@@ -281,6 +281,7 @@ public class MainActivity extends Activity {
             tab.setFocusable(true);
             tab.setContentDescription("B站" + labels[index]);
             tab.setOnClickListener(view -> {
+                hideInputKeyboard(browser);
                 if (fullscreenView != null) exitFullscreen();
                 if (item == 5) { showSettings(); return; }
                 closeSettings();
@@ -1111,10 +1112,12 @@ public class MainActivity extends Activity {
         holder.setPadding(dp(20), dp(10), dp(20), 0);
         holder.addView(input, new LinearLayout.LayoutParams(-1, -2));
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle("打开链接").setView(holder)
-                .setNegativeButton("取消", null).setPositiveButton("打开", null).create();
+                .setNegativeButton("取消", (ignored, which) -> hideInputKeyboard(input)).setPositiveButton("打开", null).create();
+        dialog.setOnDismissListener(ignored -> finishTextInput(input));
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
             String value = resolveUrlInput(input.getText().toString());
             if (value == null) { input.setError("请输入网页链接、分享文本或 BV 号"); return; }
+            hideInputKeyboard(input);
             browser.loadUrl(desktopUrl(value));
             closeSettings();
             dialog.dismiss();
@@ -1251,7 +1254,7 @@ public class MainActivity extends Activity {
         else if ("t.bilibili.com".equals(host)) selected = 3;
         else if ("account.bilibili.com".equals(host) || "passport.bilibili.com".equals(host)
                 || "space.bilibili.com".equals(host) || ("www.bilibili.com".equals(host) && path != null
-                && (path.startsWith("/account/") || path.startsWith("/watchlater")
+                && (path.startsWith("/account/") || path.equals("/history") || path.startsWith("/history/") || path.startsWith("/watchlater")
                 || path.equals("/__bilispeed__/me")))) selected = 4;
         else if ("www.bilibili.com".equals(host) && path != null) {
             if (path.startsWith("/v/popular")) selected = 1;
@@ -1271,6 +1274,20 @@ public class MainActivity extends Activity {
                 .appendQueryParameter("keyword", keyword.trim()).build().toString();
     }
 
+    private void hideInputKeyboard(View field) {
+        InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        android.os.IBinder token = field.getWindowToken();
+        if (token == null) token = root.getWindowToken();
+        if (keyboard != null && token != null) keyboard.hideSoftInputFromWindow(token, 0);
+        field.clearFocus();
+    }
+
+    private void finishTextInput(View field) {
+        if (destroyed) return;
+        hideInputKeyboard(field);
+        if (!settingsShown()) browser.requestFocus();
+    }
+
     private void showSearch() {
         EditText input = new EditText(this);
         input.setSingleLine();
@@ -1281,10 +1298,12 @@ public class MainActivity extends Activity {
         holder.setPadding(dp(20), dp(10), dp(20), 0);
         holder.addView(input, new LinearLayout.LayoutParams(-1, -2));
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle("搜索B站").setView(holder)
-                .setNegativeButton("取消", null).setPositiveButton("搜索", null).create();
+                .setNegativeButton("取消", (ignored, which) -> hideInputKeyboard(input)).setPositiveButton("搜索", null).create();
+        dialog.setOnDismissListener(ignored -> finishTextInput(input));
         Runnable search = () -> {
             String keyword = input.getText().toString().trim();
             if (keyword.isEmpty()) { input.setError("请输入搜索内容"); return; }
+            hideInputKeyboard(input);
             browser.loadUrl(searchUrl(keyword));
             dialog.dismiss();
         };
@@ -1294,9 +1313,12 @@ public class MainActivity extends Activity {
             dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
         });
         input.setOnEditorActionListener((view, action, event) -> {
-            if (action != android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) return false;
-            search.run();
-            return true;
+            boolean enter = event != null && event.getKeyCode() == android.view.KeyEvent.KEYCODE_ENTER;
+            if (action == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+                    || enter && event.getAction() == android.view.KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                search.run(); return true;
+            }
+            return enter;
         });
         dialog.show();
     }
@@ -1421,7 +1443,18 @@ public class MainActivity extends Activity {
         else if (appearanceDialog != null && appearanceDialog.isShowing()) appearanceDialog.dismiss();
         else if (settingsShown()) closeSettings();
         else if (fullscreenView != null) exitFullscreen();
-        else if (browser.canGoBack()) browser.goBack();
+        else if (MY_PAGE.equals(browser.getUrl())) {
+            WebView owner = browser;
+            int generation = pageGeneration;
+            owner.evaluateJavascript("(function(){var dialog=document.querySelector('dialog[open]');"
+                    + "if(!dialog)return false;dialog.close();return true;})()", closed -> {
+                if (destroyed || owner != browser || generation != pageGeneration) return;
+                if (!"true".equals(closed)) goBackInHistory();
+            });
+        } else goBackInHistory();
+    }
+    private void goBackInHistory() {
+        if (browser.canGoBack()) browser.goBack();
         else finish();
     }
     @Override public void onBackPressed() { goBack(); }

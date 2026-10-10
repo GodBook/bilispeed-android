@@ -570,6 +570,9 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
 
     function refresh() {
         if (suspended || !document.head) return;
+        // The player can appear before the surrounding Vue page has hydrated.
+        // Its controls are extra DOM children too, so share the same mount gate.
+        if (document.querySelector('#mirror-vdcon') && !window.__BiliTouch.isPageReady()) return;
         setAppearance(appearance);
         if (!document.getElementById('bilispeed-player-style')) {
             const style = document.createElement('style');

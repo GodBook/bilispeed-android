@@ -1,5 +1,31 @@
 # Android 16 验收记录
 
+## 1.2.7：历史、收藏、稍后再看、动态与全部主要入口
+
+验收日期：2026-10-10（北京时间）。按用户要求使用已连接的实体小米 9 SE：无线ADB / Android15 API35 / WebView153.0.8010.36 / 1080×2340 / density440，正常WebView约392×717 CSS px。使用手机原有Wi-Fi和已登录账号；未清理应用数据或Cookies，测试前保存全部playback/updates偏好。
+
+修复范围：历史的新旧地址、日期分组、网格/列表和筛选搜索；收藏夹选择、收藏视频与搜索；稍后再看的两种列表、工具栏和空状态；登录态动态、图片、视频、转发、详情评论；空间首页、投稿、关注/粉丝、追番、分页与空间设置；「我的」弹窗返回。账号弹窗保留完整遮罩，内容与确认/取消按钮适配手机。
+
+额外发现并修复视频页初始化竞态。旧版触屏模式下，官方脚本抛`HierarchyRequestError`，`#app.__vue__`不存在，`#commentapp`为空；实际在原生设置关闭触屏布局后，同一视频正常mounted且创建评论。原因是Vue在开始hydration时移除SSR标记，原判断过早认为页面就绪，播放器控制栏同样会提前追加子节点。现以官方根组件mounted为依据，播放器、内容入口与选集共用此门槛；脚本明确失败时保留延迟兜底，暂停后台等待。
+
+已完成的验证与证据：
+
+- 视频/账号16项通过，含初始化延迟超过旧3.5秒兜底、SSR标记已移除但尚未mounted、脚本失败后兜底、播放器控件不得提前插入，以及账号布局与真实Android触摸。记录：`artifacts/device-1.2.7-hydration-regression.txt`。
+- 同一官方竖屏视频实装复测mounted=true、comments=1、readyState=4，播放中查看评论不被mini播放器遮挡。记录：`device-1.2.7-mounted-portrait-result.json`、`device-1.2.7-mounted-comments-result.json`与对应native.png。
+- 实际原生设置选择3x后，官方视频rate=3；真实触摸暂停、继续、横屏全屏（821×392 CSS px）和系统返回通过。记录：`device-1.2.7-live-pause.json`、`live-resume.json`、`live-fullscreen.json`、`live-fullscreen-back.json`及原生全屏截图。「我的」弹窗按系统返回后留在原页且dialogOpen=false，见`device-1.2.7-my-back-live.json`。
+- 包含最终原生输入修复的完整87项整组通过（340.554秒），记录`artifacts/device-1.2.7-final-87-regression.txt`。覆盖：播放核心16、布局7、视频详情8、我的5、播放器17、更新12、渲染恢复3、手机布局5、账号页面8、设置6。没有用先前84/86项候选结果代替最终验证。
+- 同一最终候选APK在同一手机执行layoutWidth=320，账号8项整组通过（15.227秒），每个夹具额外断言实际innerWidth为320±1。记录`device-1.2.7-final-320.txt`，没有修改手机系统分辨率或密度。
+- 网页适配最终23状态全部通过，记录`device-1.2.7-release-live-pages.txt`及`device-1.2.7-release-*-result.json/native.png`。包括首页、搜索、4个热门分类页面、历史、稍后再看、收藏、空间首页/投稿/关注/粉丝/动态/设置/合集/追番、动态首页、竖屏视频、播放中评论、分P、合集和我的。公开UP有内容的投稿另通过`device-1.2.7-public-final-uploads-result.json`检查。
+- 最终候选为1810586字节，SHA-256 `20122027DF7C2B535A5BAC11AA711D9CF4366EB6D6B0349F43C5AEE74D43FE90`，从手机拉取完全一致，保存在`artifacts/tested-1.2.7/`。对应生产源码指纹`device-1.2.7-final-source-sha256.json`，最终实站检查后再次核对未变。追加原生输入修复前的候选另存`tested-1.2.7-before-native-input/`，不作为最终交付依据。
+- 实际原生搜索发现键盘遗留，后续WebView缩到400px；新增提交/取消时的输入清理与焦点恢复，底部导航切换清理键盘，原生搜索兼容硬件Enter。新增原生IME专项实际显示手机键盘，搜索按钮/硬件回车/取消三路径全部验证IME隐藏、视口恢复和URL保持。记录`device-1.2.7-native-keyboard-final.txt`（1项含3流程）、`native-keyboard-flows.txt`。首次键盘事件未提供真实uptime与SOURCE_KEYBOARD而被系统拒绝，修正事件构造后通过，断言未降低。
+- 最终干净会话通过实际原生点击核对首页、热门、动态、我的、设置及设置返回；搜索输入后按当前弹窗按钮打开真实结果页，视口恢复392×717。记录`device-1.2.7-final-native-entries.json`与`final-native-search.json`。动态详情实站内容/视频卡片/评论可见，scrollWidth=392，无内容溢出，见`device-1.2.7-final-dynamic-detail.json/native.png`。
+
+过程中的失败与定位：第一轮83项有3项失败，日志`device-1.2.7-full-regression.txt`保留。DesktopLayout与Settings夹具在文档替换期间过早evaluateJavascript而丢回调，现等待该夹具load提交；「我的」返回夹具的原生历史地址为about:blank，现使用真实MY_PAGE并断言原生URL。修正后19项布局/我的/账号及13项账号/设置专项通过。随后84项整组通过，但实站又发现上述评论初始化问题，已重新打开验证。第一轮实站18状态通过；粉丝选择器与评论失败截图仍保留，不计为通过。
+
+验证边界：真实账号稍后再看为空，带内容的网格/列表用官方结构夹具检查；当前粉丝、投稿与个人动态等空状态实测，公开UP有内容的投稿另行检查。没有在真实账号发送评论/动态、删除记录/收藏或修改隐私；这些官方写操作没有被宣称已实测。会员专属字幕未验。离线缓存仍为明确的说明入口，没有宣称新增下载能力。
+
+正式构建、GitHub发布、附件下载与最终手机清理：待本轮验收完成后补记。
+
 ## 1.2.6：底部设置、倍速整合与重复工作削减
 
 验收日期：2026-10-10（北京时间）。按用户要求使用已连接无线调试的实体小米 9 SE：10.93.192.96:5555 / Android 15（API 35）/ WebView 153.0.8010.36 / 1080×2340 / density440。实站使用手机现有 Wi-Fi，未更改其联网方式。另用 Android 16 / WebView 133 模拟器验证 320px 窄屏。

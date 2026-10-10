@@ -7,6 +7,8 @@ const page = await connectDevice();
 const stage = process.argv[2];
 const serial = process.argv[3] || process.env.BILISPEED_TEST_SERIAL || process.env.ANDROID_SERIAL;
 const evidencePrefix = process.env.BILISPEED_EVIDENCE_PREFIX || '';
+const accountMid = process.env.BILISPEED_ACCOUNT_MID || '';
+if (accountMid && !/^[1-9][0-9]*$/.test(accountMid)) throw new Error('Invalid BILISPEED_ACCOUNT_MID');
 const stages = {
     home: ['https://www.bilibili.com/', '.bili-video-card'],
     search: ['https://search.bilibili.com/all?keyword=%E7%94%B5%E8%B7%AF5%E5%B0%8F%E6%97%B6', '.bili-video-card__info--tit'],
@@ -15,6 +17,8 @@ const stages = {
     history: ['https://www.bilibili.com/v/popular/history', '.video-card__info'],
     rank: ['https://www.bilibili.com/v/popular/rank/all', '.rank-item'],
     dynamic: ['https://t.bilibili.com/', '.bili-dyn-item'],
+    'account-history': ['https://www.bilibili.com/account/history', '.history-record'],
+    watchlater: ['https://www.bilibili.com/watchlater/list', '.watchlater-list'],
     me: ['https://www.bilibili.com/__bilispeed__/me', 'main'],
     login: ['https://passport.bilibili.com/login', '.login-pwd input'],
     video: ['https://www.bilibili.com/video/BV17x411w7KC/', '#bilispeed-touch-controls'],
@@ -22,6 +26,13 @@ const stages = {
     parts: ['https://www.bilibili.com/video/BV17x411w7KC/', '#bilispeed-episodes[data-ready]'],
     collection: ['https://www.bilibili.com/video/BV12gpt6UER4/', '#bilispeed-episodes[data-ready]']
 };
+if (accountMid) for (const [name, path, selector] of [
+    ['favorites', 'favlist', '.favlist-main'], ['space', '', '.space-home'],
+    ['following', 'relation/follow', '.space-follow'], ['fans', 'relation/fans', '.space-fans'],
+    ['uploads', 'upload/video', '.space-upload'], ['space-dynamic', 'dynamic', '.space-dynamic'],
+    ['space-settings', 'settings', '.space-settings'], ['space-lists', 'lists', '.space-main'],
+    ['space-bangumi', 'bangumi', '.space-subscribe']
+]) stages[name] = ['https://space.bilibili.com/' + accountMid + '/' + path, selector];
 export const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function waitFor(expression, seconds = 40) {
     const deadline = Date.now() + seconds * 1000;
@@ -48,6 +59,8 @@ try {
         if (['video', 'portrait', 'parts', 'collection'].includes(stage)) await waitFor('document.querySelector("video")?.readyState >= 2');
         await delay(1000);
     } else if (stage === 'comments') {
+        await waitFor('document.querySelector("#commentapp, bili-comments")');
+        await page.evaluate('document.querySelector("#commentapp, bili-comments").scrollIntoView({behavior:"instant",block:"center"});true');
         await waitFor('document.querySelector("bili-comments")');
         await page.evaluate('document.documentElement.style.scrollBehavior="auto";document.querySelector("bili-comments").scrollIntoView({behavior:"instant",block:"start"});true');
         await waitFor('document.querySelector("bili-comments").shadowRoot?.querySelector("bili-comment-thread-renderer")');
@@ -60,11 +73,15 @@ try {
 
     const result = await page.evaluate(`(()=>{
         const rect = e => {const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,right:r.right,bottom:r.bottom};};
-        const cards=Array.from(document.querySelectorAll('.recommended-container_floor-aside .feed-card, .video-list > *, .popular-container .video-card, .rank-list .rank-item, .bili-dyn-item'))
+        const cards=Array.from(document.querySelectorAll('.recommended-container_floor-aside .feed-card, .video-list > *, .popular-container .video-card, .rank-list .rank-item, .bili-dyn-item, .history-card, .watchlater-list-grid > *, .fav-list-main .items__item, .relation-card'))
             .filter(e=>e.getBoundingClientRect().width>0).slice(0,8);
         const actions=document.querySelector('bili-comments')?.shadowRoot?.querySelector('bili-comment-thread-renderer')?.shadowRoot?.querySelector('bili-comment-renderer')?.shadowRoot?.querySelector('bili-comment-action-buttons-renderer')?.shadowRoot;
+        const regions=Array.from(document.querySelectorAll('.history-record, .history-record .main-head, .breadcrumbs__top, .watchlater-list, .list-header-main, .space-main, .favlist-main, .fans-main, #bilispeed-folder-toggle, .relation-content, .upload-content, .space-settings .section, .bili-dyn-home--member > main, html[data-bilispeed-page="dynamic"] #app > .content, .bili-dyn-card-video'))
+            .filter(e=>e.getBoundingClientRect().width>0).map(e=>({class:e.className,...rect(e)}));
         return {stage:${JSON.stringify(stage)},url:location.href,title:document.title,width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth,
-            cards:cards.map(rect),tabs:Array.from(document.querySelectorAll('.nav-tabs__item')).map(e=>({text:e.innerText,...rect(e)})),
+            cards:cards.map(rect),regions,kind:document.documentElement.dataset.bilispeedPage,
+            dynamicHighlight:document.querySelector('.bili-dyn-list-tabs__highlight')?rect(document.querySelector('.bili-dyn-list-tabs__highlight')):null,
+            tabs:Array.from(document.querySelectorAll('.nav-tabs__item')).map(e=>({text:e.innerText,...rect(e)})),
             player:document.querySelector('.bpx-player-container')?{screen:document.querySelector('.bpx-player-container').dataset.screen,position:getComputedStyle(document.querySelector('.bpx-player-container')).position,...rect(document.querySelector('.bpx-player-container'))}:null,
             video:Array.from(document.querySelectorAll('video')).map(v=>({width:v.videoWidth,height:v.videoHeight,ready:v.readyState,time:v.currentTime,paused:v.paused,rate:v.playbackRate})),
             videoHost:document.querySelector('[data-bilispeed-player]')?rect(document.querySelector('[data-bilispeed-player]')):null,
@@ -80,6 +97,9 @@ try {
         assert(card.w > result.width * .3, 'Card is compressed');
     }
     for (const tab of result.tabs) assert(tab.x >= 0 && tab.right <= result.width + 2, 'Popular category is clipped');
+    for (const region of result.regions) assert(region.x >= -1 && region.right <= result.width + 2, 'Content region is clipped: ' + JSON.stringify(region));
+    if (stage === 'account-history') assert(result.kind === 'history', 'Redirected history route is not recognized');
+    if (result.dynamicHighlight) assert(result.dynamicHighlight.h <= 8, 'Dynamic tab indicator covers its label');
     if (stage === 'comments') assert(result.player.bottom <= 1 && result.player.position !== 'fixed', 'Player obscures comments');
     if (stage === 'comments') assert(result.commentActions?.nowrap === 'nowrap' && result.commentActions.reply.w >= 24, 'Comment action text is compressed');
     if (stage === 'portrait') assert(result.videoHost.h <= result.height * .7 + 1, 'Portrait player takes too much page height');

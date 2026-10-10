@@ -1,4 +1,38 @@
-# 2026-10-10 1.2.6 设置与流畅度检查点
+# 2026-10-10 1.2.7 全界面真机适配检查点
+
+当前需求：修复「我的」中历史记录、我的收藏、稍后再看及动态界面；检查所有现有页面与功能，优化发现的问题，全部验证后更新 GitHub 和 Release。用户明确要求使用已连接的手机。
+
+工作位置：本项目 main，起点 ac0e33a / 1.2.6（versionCode 10），开始时工作区干净。使用 long-project-execution 保存检查点，以本文件维护当前进度，以 VALIDATION.md 维护验收证据。
+
+设备：无线 ADB 10.93.192.96:5555，小米 9 SE；已确认在线且安装 1.2.6。保留应用数据、Cookies 与原签名；旧测试夹具运行前后使用 DevicePreferencesProbe 保存及恢复设置。
+
+当前状态：全部本轮修复已完成实体手机验收，等待提交与正式发布。历史/稍后再看/空间的1012/1060/1100px外壳和登录态动态556px主栏已按手机宽度修复；投稿/空间动态/分页/空间设置、「我的」弹窗返回、视频初始化和原生输入修复已纳入最终候选验证。最终87项整组通过、同机320px账号8项通过，不以第一候选结果代替最终结果。
+
+验收范围：历史/收藏/稍后再看、动态列表与详情、个人空间及关注/粉丝、首页/热门/搜索、视频/评论/选集/播放器、我的/登录、设置/链接/返回/前后台、更新与恢复；以真实手机页面与现有自动化测试交叉验证。真实账号不可访问的状态另用官方结构夹具检查，不将夹具当作实站账号验收。
+
+最近结果：第一轮完整83项中80通过；失败日志保存在 artifacts/device-1.2.7-full-regression.txt。两处是切换夹具文档时过早 evaluateJavascript 导致回调丢失，已让 DesktopLayout/Settings 夹具等待实际 load 提交；「我的」返回夹具曾以 about:blank 为历史地址，已改用真实 MY_PAGE 并新增原生地址断言。布局/个人页/账号专项19项通过（device-1.2.7-targeted-regression.txt），账号/设置专项13项通过（device-1.2.7-account-settings-final.txt）。未降低断言、未隐去第一轮失败。
+
+最近补充：完整84项通过（device-1.2.7-final-full-regression.txt）；最终账号8项及同机实际320px的8项通过（device-1.2.7-account-final.txt、device-1.2.7-account-320.txt、device-1.2.7-narrow-viewports.txt）。真实页面第一轮18个状态通过，粉丝页使用不同 .space-fans 结构、视频评论为空；保留失败截图。粉丝页已补齐样式，脚本的粉丝选择器已校正。
+
+已解决的实站问题：触屏布局中视频页抛 HierarchyRequestError，#app.__vue__ 未挂载、评论未创建；使用原生设置关闭触屏布局后同一视频正常挂载，bili-comments=1。官方 Vue 在开始 hydration 时就移除 data-server-rendered，旧判断和播放器控件提前追加 DOM 会打断初始化。已改为等待官方 Vue 根组件实际 mounted；播放器、选集和内容入口使用同一门槛，明确脚本错误才保留3.5秒兜底。新增延迟挂载超过3.5秒及失败兜底回归。
+
+最新验证：视频/账号16项通过（device-1.2.7-hydration-regression.txt）。同一官方竖屏视频实装复测 mounted=true、comments=1、readyState=4；播放中查看评论通过，证据 device-1.2.7-mounted-portrait/comments-result.json 与原生截图。分P、合集、粉丝及我的通过（device-1.2.7-mounted-pages.txt）。真实原生设置选择3x后官方视频rate=3，实际触摸暂停/继续、横屏全屏和系统返回均通过（device-1.2.7-live-*.json、live-fullscreen-native.png）。「我的」弹窗实际返回关闭并留在原页（device-1.2.7-my-back-live.json）。
+
+最近验证：86项完整回归通过（325.525秒，device-1.2.7-release-full-regression.txt），该候选同机320px账号8项通过（device-1.2.7-release-account-320.txt），23状态最终实站全部通过（device-1.2.7-release-live-pages.txt）。候选0CB1E984... / 1809802字节已从手机拉取核对并归档tested-1.2.7。公开UP有内容投稿也通过。
+
+最终追加修复：实际原生搜索后键盘遗留，后续WebView高度降到400px；键盘/焦点未正确结束输入。已为搜索和打开链接增加提交/取消时的键盘清理、焦点恢复，底部导航切换清理输入；搜索支持IME搜索与实体Enter。新增SettingsInstrumentationTest原生IME专项，用本地搜索响应夹具，三轮实际打开键盘，再验证搜索按钮、硬件回车和取消后IME隐藏、视口恢复和URL。专项及追加后的完整87项已通过，先前86项不代替新实现验收。
+
+IME专项通过：device-1.2.7-native-keyboard-final.txt，三个实际IME流程button/enter/cancel全部keyboardHidden=true、viewportRestored=true（native-keyboard-flows.txt）。首次专项的回车注入使用无时间/来源的KeyEvent而被系统拒绝，已按真实键盘事件提供uptime、虚拟键盘设备及SOURCE_KEYBOARD，保留断言；Windows增量dex文件锁曾导致一次构建失败，停止闲置Gradle daemon后重建通过，失败日志保留。
+
+最终结果：87项完整回归通过340.554秒（device-1.2.7-final-87-regression.txt）；同机320px账号8项通过15.227秒（final-320.txt）。最终候选20122027DF7C2B535A5BAC11AA711D9CF4366EB6D6B0349F43C5AEE74D43FE90 / 1810586字节与手机拉取包一致，保存在tested-1.2.7；生产源码指纹final-source-sha256.json核对未变。网页23状态通过，最终原生入口/真实搜索与动态详情通过，见final-native-entries.json、final-native-search.json及final-dynamic-detail.json/native.png。
+
+下一步：结束临时检查会话，提交源码并重建正式包，核对与已测候选的ZIP内容差异后推送、正式发布、下载验证，最后覆盖安装正式包并清理测试环境。当前尚未推送或发布。
+
+测试环境：原始偏好已成功恢复，快照自动删除，原倍速1x；不能再运行会清空偏好的旧夹具，除非重新保存快照。当前临时休眠超时1800000，原值600000，结束时恢复；保留原 Wi-Fi 与无线 ADB。截图/几何数据保存在 artifacts/device-1.2.7-*；带 preview 标记的结果仅供迭代，不算安装包验收。
+
+运行中与外部动作：尚未推送或发布；当前 Release 为 v1.2.6。
+
+# 2026-10-10 1.2.6 设置与流畅度检查点（历史）
 
 任务：隐藏三点和倍速浮钮，在底部「我的」右侧新增设置，整合倍速与浏览选项，削减重复脚本工作；真机通过后更新 GitHub 与 Release。
 

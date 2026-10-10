@@ -12,11 +12,14 @@
     let suspended = !!window.__BILI_SPEED_SUSPENDED__;
     let previousPage = '';
     let hydrationStarted = 0;
+    let hydrationTimer = null;
+    let bootstrapFailed = false;
+    let previousSpaceRoute = '';
     const managedDanmaku = new WeakSet();
     const commentRoots = new Map();
     const waitingCommentTags = new Set();
     let commentTimer = null;
-    const ownElements = '#bilispeed-touch-controls, #bilispeed-seek-feedback, #bilispeed-video-tabs, #bilispeed-touch-style, #bilispeed-player-style, #bilispeed-episodes-style, #bilispeed-episodes, [data-bilispeed-image], [data-bilispeed-danmaku-header]';
+    const ownElements = '#bilispeed-touch-controls, #bilispeed-seek-feedback, #bilispeed-video-tabs, #bilispeed-touch-style, #bilispeed-player-style, #bilispeed-episodes-style, #bilispeed-episodes, #bilispeed-folder-toggle, [data-bilispeed-image], [data-bilispeed-danmaku-header]';
     const transientPlayerElements = '.bpx-player-dm-wrap, .bpx-player-dm-container, .bpx-player-subtitle-wrap';
     const observation = { childList: true, subtree: true, attributes: true, attributeFilter: ['content', 'data-server-rendered'] };
     const stylesheet = `
@@ -295,6 +298,209 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
     html[${attribute}] .bili-dyn-home--visitor > :not(.left):not(.right),
     html[${attribute}] .bili-dyn-list, html[${attribute}] .bili-dyn-item { width: 100% !important; min-width: 0 !important; box-sizing: border-box; }
 
+    /* The signed-in feed uses plain aside/main children, unlike the visitor
+       feed. Adapt the actual content column as well as the outer shell. */
+    html[${attribute}] .bili-dyn-home--member > :is(.left, .right) { display: none !important; }
+    html[${attribute}] :is(.bili-dyn-home--member, .bili-dyn-home--visitor) > main,
+    html[${attribute}] :is(.bili-dyn-home--member, .bili-dyn-home--visitor) > main > section,
+    html[${attribute}] :is(.bili-dyn-detail, .bili-dyn-details, .bili-dyn-publishing, .bili-dyn-up-list, .bili-dyn-list-tabs) {
+        width: 100% !important; min-width: 0 !important; max-width: 100% !important; margin-left: 0 !important;
+        margin-right: 0 !important; box-sizing: border-box;
+    }
+    html[${attribute}] .bili-dyn-up-list { overflow-x: auto; }
+    html[${attribute}] .bili-dyn-list-tabs { gap: 0; overflow-x: auto; }
+    html[${attribute}] .bili-dyn-list-tabs__list { flex: none; min-height: 44px; }
+    html[${attribute}][data-bilispeed-page="dynamic"] #app > .content { width: 100% !important; min-width: 0 !important; padding: 12px !important; margin: 0 !important; box-sizing: border-box; }
+    html[${attribute}][data-bilispeed-page="dynamic"] #app > .content > :is(.card, .bili-tabs) { width: 100% !important; min-width: 0 !important; max-width: 100%; }
+    html[${attribute}] .bili-dyn-publishing__title__input { width: 0 !important; min-width: 0; flex: 1; }
+    html[${attribute}] .bili-dyn-publishing__action { flex-wrap: wrap; height: auto !important; gap: 8px; }
+    html[${attribute}] .bili-dyn-item__main { padding: 0 !important; min-width: 0; }
+    html[${attribute}] .bili-dyn-item__avatar { top: 12px !important; left: 12px !important; width: 40px !important; height: 40px !important; padding: 0 !important; }
+    html[${attribute}] .bili-dyn-item__avatar :is(.bili-dyn-avatar, .b-avatar) { width: 40px !important; height: 40px !important; }
+    html[${attribute}] .bili-dyn-item__header { width: auto !important; min-height: 64px; height: auto !important; margin: 0 !important; padding: 12px 44px 8px 64px !important; box-sizing: border-box; }
+    html[${attribute}] .bili-dyn-item__body { width: auto !important; min-width: 0; margin: 0 !important; padding: 0 12px !important; }
+    html[${attribute}] .bili-dyn-item__footer { display: flex !important; width: auto !important; margin: 0 !important; padding: 0 12px !important; }
+    html[${attribute}] .bili-dyn-item__action { flex: 1; min-width: 0; width: auto !important; }
+    html[${attribute}] .bili-dyn-item__action > * { width: 100% !important; min-height: 44px; }
+    html[${attribute}] :is(.bili-dyn-content, .bili-dyn-content__orig, .bili-dyn-content__orig__major, .bili-dyn-content__orig__desc, .bili-dyn-content__orig__topic, .bili-dyn-content__repost) {
+        min-width: 0 !important; max-width: 100% !important; box-sizing: border-box; overflow-wrap: anywhere;
+    }
+    html[${attribute}] .bili-dyn-card-video { display: flex !important; width: 100% !important; min-width: 0 !important; height: auto !important; min-height: 100px; }
+    html[${attribute}] .bili-dyn-card-video__header { flex: 0 0 42%; width: 42% !important; height: auto !important; min-height: 100px; }
+    html[${attribute}] .bili-dyn-card-video__cover { width: 100% !important; height: 100% !important; }
+    html[${attribute}] .bili-dyn-card-video__body { flex: 1; min-width: 0; width: auto !important; height: auto !important; padding: 10px !important; }
+    html[${attribute}] .bili-dyn-card-video__title { font-size: 14px !important; line-height: 20px !important; -webkit-line-clamp: 2 !important; height: auto !important; }
+    html[${attribute}] .bili-dyn-card-video__desc { display: none !important; }
+    html[${attribute}] .bili-dyn-card-video__stat { position: static !important; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+    html[${attribute}] .bili-dyn-card-video__stat__item { width: auto !important; margin-right: 8px !important; }
+    html[${attribute}] :is(.bili-dyn-card-opus, .bili-dyn-card-article, .bili-dyn-card-common, .bili-dyn-card-reserve, .bili-dyn-card-vote, .bili-album) { max-width: 100% !important; min-width: 0 !important; box-sizing: border-box; }
+    html[${attribute}] .bili-album__preview { max-width: 100% !important; }
+    html[${attribute}] .bili-album__preview.grid3 { width: 100% !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+    html[${attribute}] .bili-album__preview.grid2 { width: min(100%, 268px) !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    html[${attribute}] :is(.bili-album__preview.grid3, .bili-album__preview.grid2) .bili-album__preview__picture { width: 100% !important; height: auto !important; aspect-ratio: 1; }
+    html[${attribute}] .bili-album__preview__picture { max-width: 100% !important; }
+    html[${attribute}] .bili-album__watch__control { flex-wrap: wrap; height: auto !important; }
+    html[${attribute}] .bili-album__watch__control__option { min-height: 36px; padding: 0 10px !important; }
+
+    /* History and watch-later are separate desktop applications. Their current
+       routes redirect to /history and /watchlater/list, and use scoped styles. */
+    html[${attribute}] :is(.history-record, .watchlater-list) {
+        width: 100% !important; min-width: 0 !important; max-width: 100% !important;
+        margin: 0 !important; padding: 16px 12px 24px !important; box-sizing: border-box;
+    }
+    html[${attribute}] :is(.history-record, .watchlater-list) :is(.main-head, .watchlater-list-title) {
+        display: flex; flex-wrap: wrap; gap: 8px 12px; width: 100% !important; min-width: 0 !important; max-width: 100% !important; height: auto !important; margin: 0 0 12px !important; padding: 0 !important;
+    }
+    html[${attribute}] .history-record .main-title { margin: 0 !important; font-size: 22px !important; min-height: 40px; }
+    html[${attribute}] .history-record .main-actions { gap: 12px; margin-left: auto; min-height: 40px; }
+    html[${attribute}] .watchlater-list-title-left { font-size: 22px !important; }
+    html[${attribute}] .watchlater-list-title-right { margin-left: auto; }
+    html[${attribute}] :is(.history-record, .watchlater-list) :is(.main-breadcrumbs, .breadcrumbs, .breadcrumbs__top, .breadcrumbs__bottom, .main-content,
+        .history-list, .history-timeline, .history-timeline-item, .history-section, .watchlater-list-nav, .watchlater-list-slim, .breadcrums-nav, .list-header, .list-header-main, .list-header-extra, .watchlater-list-container) {
+        width: 100% !important; min-width: 0 !important; max-width: 100% !important; height: auto !important;
+        margin-left: 0 !important; margin-right: 0 !important; padding-left: 0 !important; padding-right: 0 !important; box-sizing: border-box;
+    }
+    html[${attribute}] :is(.history-record, .watchlater-list) :is(.main-breadcrumbs, .watchlater-list-nav) { position: static !important; }
+    html[${attribute}] :is(.history-record, .watchlater-list) .fixed-nav-shim { display: none !important; }
+    html[${attribute}] .history-record :is(.breadcrumbs__top, .breadcrumbs__top > .left, .tabs, .breadcrumbs__top > .right, .filters, .filter-item, .radio-filter),
+    html[${attribute}] .watchlater-list :is(.list-header-main, .list-header-filter, .list-header-options, .list-header-extra) {
+        flex-wrap: wrap; min-width: 0 !important; max-width: 100% !important; height: auto !important; gap: 8px;
+    }
+    html[${attribute}] .history-record .breadcrumbs__top > :is(.left, .right),
+    html[${attribute}] .watchlater-list :is(.list-header-filter, .list-header-options) { width: 100% !important; margin: 0 !important; }
+    html[${attribute}] .history-record .radio-tabs { gap: 0 !important; }
+    html[${attribute}] .history-record .radio-tabs__item { margin: 0 !important; padding: 0 10px !important; min-height: 44px; }
+    html[${attribute}] :is(.history-record, .watchlater-list) :is(.vui_button, .radio-filter__item, .lists-view-mode__action, .list-header-filter__btn, .list-header-filter__more, .watchlater-list-title-sort) {
+        min-height: 40px; min-width: 40px; box-sizing: border-box; touch-action: manipulation;
+    }
+    html[${attribute}] :is(.history-record, .watchlater-list) .search-bar {
+        flex: 1 1 100%; width: 100% !important; height: 40px !important; --search-bar-side-padding: 12px;
+        --search-bar-bg: var(--graph_bg_regular, #f1f2f3); box-sizing: border-box;
+    }
+    html[${attribute}] :is(.history-record, .watchlater-list) .search-bar .input-wrap { flex: 1; min-width: 0; max-width: none !important; }
+    html[${attribute}] :is(.history-record, .watchlater-list) .search-bar-input { width: 100% !important; min-width: 0; font-size: 16px; }
+    html[${attribute}] .history-record .history-timeline-item { display: block !important; }
+    html[${attribute}] .history-record .history-timeline-label { position: static !important; width: 100% !important; height: auto !important; margin: 20px 0 12px !important; }
+    html[${attribute}] .history-record :is(.section-label, .section-title) { position: static !important; width: auto !important; height: auto !important; margin: 0 !important; }
+    html[${attribute}] .history-record :is(.history-timeline-anchor, .section-anchor-icon, .history-start, .history-end, .history-floating-nav) { display: none !important; }
+    html[${attribute}] .history-record .section-cards { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 20px 10px !important; padding-bottom: 12px !important; }
+    html[${attribute}] .history-record .section-cards.list-mode { grid-template-columns: minmax(0, 1fr) !important; }
+    html[${attribute}] .history-record :is(.history-card, .history-skeleton-card, .history-card__left, .history-skeleton-card__left, .history-card__main, .history-skeleton-card__main) { width: 100% !important; min-width: 0 !important; max-width: 100% !important; box-sizing: border-box; }
+    html[${attribute}] .history-record .history-card.list-mode { flex-wrap: wrap; }
+    html[${attribute}] .history-record .history-card__right { flex: 1; min-width: 0; max-width: 100%; }
+    html[${attribute}] .watchlater-list-grid { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 20px 10px !important; padding: 0 !important; }
+    html[${attribute}] .watchlater-list-grid > * { width: 100% !important; min-width: 0 !important; max-width: 100% !important; margin: 0 !important; }
+    html[${attribute}] .watchlater-list--vertical .watchlater-list-grid { grid-template-columns: minmax(0, 1fr) !important; }
+    html[${attribute}] .watchlater-list :is(.video-card__wrap, .video-card__left, .video-card__right) { min-width: 0 !important; max-width: 100%; box-sizing: border-box; }
+    html[${attribute}] .watchlater-list .video-card--grid .video-card__wrap { display: block !important; }
+    html[${attribute}] .watchlater-list .video-card--grid :is(.video-card__left, .video-card__right) { width: 100% !important; margin-left: 0 !important; }
+    html[${attribute}] .watchlater-list .video-card--list .video-card__left { flex: 0 0 42%; width: 42% !important; }
+    html[${attribute}] .watchlater-list .video-card--list .video-card__right { flex: 1; width: auto !important; padding-left: 10px !important; }
+    html[${attribute}] .watchlater-list-empty { width: 100% !important; min-width: 0 !important; margin: 24px 0 !important; padding: 24px 12px !important; box-sizing: border-box; text-align: center; }
+    html[${attribute}] .watchlater-list-empty__img { margin-left: auto !important; margin-right: auto !important; }
+    html[${attribute}] :is(.history-record, .watchlater-list) .fixed-side-menu { display: none !important; }
+
+    /* Space is shared by favorites, uploads, dynamics, following and fans. */
+    html[${attribute}][data-bilispeed-page="space"] :is(.space-main, .upinfo, .nav-bar__main) {
+        width: 100% !important; min-width: 0 !important; max-width: 100% !important; margin: 0 !important; box-sizing: border-box;
+    }
+    html[${attribute}][data-bilispeed-page="space"] .space-main { padding: 16px 12px !important; }
+    html[${attribute}][data-bilispeed-page="space"] :is(.space-home, .space-follow, .space-fans, .space-dynamic) { display: flex !important; flex-direction: column; width: 100% !important; min-width: 0 !important; gap: 16px; }
+    html[${attribute}][data-bilispeed-page="space"] :is(.space-home, .space-dynamic) > :is(.content, .aside),
+    html[${attribute}][data-bilispeed-page="space"] :is(.space-follow, .space-fans) > :is(.follow-aside, .relation-aside, .follow-main, .fans-main) { width: 100% !important; min-width: 0 !important; max-width: 100% !important; margin: 0 !important; padding: 0 !important; box-sizing: border-box; }
+    html[${attribute}][data-bilispeed-page="space"] :is(.space-dynamic__content, .space-dynamic__aside, .space-dynamic-inner, .space-dynamic-inner > .content, .space-dynamic__top) { width: 100% !important; min-width: 0 !important; margin-left: 0 !important; margin-right: 0 !important; box-sizing: border-box; }
+    html[${attribute}][data-bilispeed-page="space"] :is(.follow-aside, .relation-aside) { max-height: 160px; overflow-y: auto; }
+    html[${attribute}][data-bilispeed-page="space"] :is(.follow-aside, .relation-aside) > .vui_collapse { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    html[${attribute}][data-bilispeed-page="space"] :is(.follow-main-title, .relation-content, .relation-content-header, .relation-content-header__left, .relation-content-header__right) { width: 100% !important; min-width: 0 !important; height: auto !important; margin: 0 !important; padding-left: 0 !important; padding-right: 0 !important; box-sizing: border-box; }
+    html[${attribute}][data-bilispeed-page="space"] .relation-content-header { flex-wrap: wrap; gap: 12px; }
+    html[${attribute}][data-bilispeed-page="space"] .relation-content .items { display: grid !important; grid-template-columns: minmax(0, 1fr) !important; gap: 20px !important; }
+    html[${attribute}][data-bilispeed-page="space"] .relation-card { width: 100% !important; min-width: 0 !important; height: auto !important; gap: 16px; }
+    html[${attribute}][data-bilispeed-page="space"] .relation-card-info { flex: 1; min-width: 0 !important; width: auto !important; margin: 0 !important; }
+    html[${attribute}][data-bilispeed-page="space"] .upinfo { padding: 12px !important; height: auto !important; gap: 12px; flex-wrap: wrap; }
+    html[${attribute}][data-bilispeed-page="space"] :is(.upinfo__main, .upinfo-detail) { flex: 1; min-width: 0 !important; width: auto !important; }
+    html[${attribute}][data-bilispeed-page="space"] .upinfo__main { gap: 12px !important; }
+    html[${attribute}][data-bilispeed-page="space"] .upinfo-detail__top { flex-wrap: wrap; height: auto !important; gap: 4px 8px; }
+    html[${attribute}][data-bilispeed-page="space"] .nickname { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+    html[${attribute}][data-bilispeed-page="space"] .upinfo .operations { flex: 1 1 100%; height: auto !important; margin: 0 !important; flex-wrap: wrap; }
+    html[${attribute}][data-bilispeed-page="space"] :is(.nav-bar, .nav-bar__main) { height: auto !important; position: static !important; }
+    html[${attribute}][data-bilispeed-page="space"] .nav-bar__main { display: flex; flex-direction: column; padding: 0 12px !important; align-items: stretch; }
+    html[${attribute}][data-bilispeed-page="space"] .nav-bar__main-left { display: flex; flex-direction: column; align-items: stretch; width: 100% !important; min-width: 0 !important; }
+    html[${attribute}][data-bilispeed-page="space"] .nav-tab { flex: none; width: 100% !important; gap: 20px !important; overflow-x: auto; overscroll-behavior-x: contain; }
+    html[${attribute}][data-bilispeed-page="space"] .nav-tab__item { flex: none; margin: 0 !important; min-height: 48px; }
+    html[${attribute}][data-bilispeed-page="space"] :is(.nav-bar-search, .nav-search-input) { width: 100% !important; min-width: 0 !important; margin: 0 !important; box-sizing: border-box; }
+    html[${attribute}][data-bilispeed-page="space"] .nav-bar-search { flex: none; margin-bottom: 8px !important; }
+    html[${attribute}][data-bilispeed-page="space"] .nav-bar__main-right { width: 100% !important; padding: 8px 0 !important; }
+    html[${attribute}][data-bilispeed-page="space"] .nav-statistics { width: 100% !important; justify-content: flex-start; gap: 20px; }
+    html[${attribute}] .space-favlist { display: flex !important; flex-direction: column; width: 100% !important; min-width: 0 !important; margin: 0 !important; gap: 16px; }
+    html[${attribute}] .space-favlist :is(.favlist-aside, .favlist-main) { width: 100% !important; min-width: 0 !important; max-width: 100% !important; margin: 0 !important; padding: 0 !important; box-sizing: border-box; }
+    html[${attribute}] .space-favlist .favlist-aside { max-height: 240px; height: auto !important; overflow-y: auto; overscroll-behavior: contain; border-bottom: 1px solid var(--line_regular, #e3e5e7); }
+    html[${attribute}] .space-favlist[data-bilispeed-folders]:not([data-bilispeed-folders-open]) .favlist-aside { display: none !important; }
+    html[${attribute}] #bilispeed-folder-toggle {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 48px;
+        padding: 10px 12px; border: 1px solid var(--line_regular, #e3e5e7); border-radius: 8px;
+        background: var(--bg1, #fff); color: var(--text1, #18191c); font: 15px sans-serif; text-align: left; touch-action: manipulation;
+    }
+    html[${attribute}] #bilispeed-folder-toggle::after { content: '展开'; flex: none; color: var(--text2, #61666d); font-size: 13px; }
+    html[${attribute}] #bilispeed-folder-toggle[aria-expanded="true"]::after { content: '收起'; }
+    html[${attribute}] #bilispeed-folder-toggle:active { background: var(--graph_bg_regular, #f1f2f3); }
+    html[${attribute}] .favlist-aside .vui_collapse { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100% !important; }
+    html[${attribute}] .favlist-aside :is(.vui_sidebar, .fav-collapse, .vui_collapse_item, .fav-collapse-wrap, .fav-sortable-list) { width: 100% !important; min-width: 0; }
+    html[${attribute}] .favlist-aside .vui_sidebar-item-title { flex: 1; min-width: 0; }
+    html[${attribute}] .favlist-info { display: flex; gap: 12px; min-width: 0; height: auto !important; }
+    html[${attribute}] .favlist-info-file-card { flex: 0 0 32%; width: 32% !important; height: auto !important; }
+    html[${attribute}] .favlist-info :is(.folder-cover-card, .folder-cover-card__cover) { width: 100% !important; height: auto !important; aspect-ratio: 16 / 9; }
+    html[${attribute}] .favlist-info-detail { flex: 1; min-width: 0 !important; width: auto !important; height: auto !important; padding: 0 !important; }
+    html[${attribute}] :is(.favlist-info-detail__title, .favlist-info-detail__title-row, .favlist-info-detail__actions) { height: auto !important; flex-wrap: wrap; gap: 8px; }
+    html[${attribute}] .favlist-info-detail__data { overflow-wrap: anywhere; }
+    html[${attribute}] .favlist-info-detail__actions > .vui_button { flex: 1 1 0; min-width: 0 !important; width: auto !important; padding-left: 8px !important; padding-right: 8px !important; white-space: nowrap; }
+    html[${attribute}] :is(.fav-list-main, .fav-list-header, .fav-list-header-filter, .fav-list-header-filter__left, .fav-list-header-filter__right) { width: 100% !important; min-width: 0 !important; max-width: 100% !important; height: auto !important; box-sizing: border-box; }
+    html[${attribute}] .fav-list-header-filter { flex-wrap: wrap; gap: 12px; }
+    html[${attribute}] .fav-list-header-filter__search { width: 100% !important; min-width: 0 !important; }
+    html[${attribute}] .fav-list-header-filter__search .vui_input-wrapper { flex: 1; min-width: 0; }
+    html[${attribute}] .fav-list-header .radio-filter { flex-wrap: wrap; gap: 8px; }
+    html[${attribute}] .fav-list-main .items { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 20px 10px !important; width: 100% !important; }
+    html[${attribute}] .fav-list-main .items__item { width: 100% !important; min-width: 0 !important; margin: 0 !important; }
+    html[${attribute}][data-bilispeed-page="space"] :is(.space-upload, .space-subscribe) { display: flex !important; flex-direction: column; gap: 16px; width: 100% !important; min-width: 0 !important; }
+    html[${attribute}][data-bilispeed-page="space"] :is(.upload-sidenav, .upload-content, .subscribe-sidebar, .subscribe-content) { width: 100% !important; min-width: 0 !important; margin: 0 !important; padding: 0 !important; box-sizing: border-box; }
+    html[${attribute}][data-bilispeed-page="space"] :is(.upload-sidenav, .subscribe-sidebar) { height: auto !important; }
+    html[${attribute}][data-bilispeed-page="space"] .side-nav { display: flex; width: 100% !important; overflow-x: auto; gap: 8px; }
+    html[${attribute}][data-bilispeed-page="space"] .side-nav__item { flex: none; width: auto !important; min-width: 88px; margin: 0 !important; }
+    html[${attribute}][data-bilispeed-page="space"] :is(.video-header__top, .video-header__bottom, .video-header .breadcrumb, .video-order-filter, .video-list__header) { flex-wrap: wrap; min-width: 0 !important; height: auto !important; gap: 8px; }
+    html[${attribute}][data-bilispeed-page="space"] :is(.video-body .video-list.grid-mode, .video-list__content) { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 20px 10px !important; }
+    html[${attribute}][data-bilispeed-page="space"] .upload-video-card { min-width: 0 !important; max-width: 100%; }
+    html[${attribute}][data-bilispeed-page="space"] .upload-video-card.list-mode { flex-wrap: wrap; }
+    html[${attribute}][data-bilispeed-page="space"] .upload-video-card__left { min-width: 0 !important; max-width: 100%; }
+    html[${attribute}][data-bilispeed-page="space"] .upload-video-card.list-mode .upload-video-card__left { flex: 0 0 42%; width: 42% !important; }
+    html[${attribute}][data-bilispeed-page="space"] .upload-video-card__right { min-width: 0 !important; flex: 1; }
+    html[${attribute}][data-bilispeed-page="space"] .vui_pagenation { display: flex; flex-wrap: wrap; gap: 8px; width: 100% !important; min-width: 0 !important; max-width: 100%; }
+    html[${attribute}][data-bilispeed-page="space"] .vui_pagenation--btns { display: flex; flex-wrap: wrap; gap: 6px; width: 100% !important; min-width: 0 !important; }
+    html[${attribute}][data-bilispeed-page="space"] .vui_pagenation--btn { width: auto !important; min-width: 36px !important; margin: 0 !important; }
+    html[${attribute}][data-bilispeed-page="space"] .space-settings :is(.section, .title-wrap, .column, .tags-wrap > .content, .switches, .switch-item, .switch-item > .wrap) { width: 100% !important; min-width: 0 !important; max-width: 100% !important; box-sizing: border-box; }
+    html[${attribute}][data-bilispeed-page="space"] .space-settings .privacy { grid-template-columns: minmax(0, 1fr) !important; }
+    html[${attribute}][data-bilispeed-page="space"] .space-settings .column { overflow-x: auto; overscroll-behavior-x: contain; }
+    html[${attribute}][data-bilispeed-page="space"] .space-settings .tags-wrap > .content { flex-wrap: wrap; height: auto !important; gap: 8px; }
+    @media (max-width: 350px) {
+        html[${attribute}] .favlist-info-detail__actions { flex-direction: column; align-items: stretch; }
+    }
+    html[${attribute}] :is(.history-record, .watchlater-list, .space-main) :is(.bili-video-card__title, .bili-video-card__info--tit) { font-size: 14px !important; line-height: 20px !important; height: auto !important; }
+    html[${attribute}] :is(.history-record, .watchlater-list, .space-main) :is(button, input) { font-size: 14px; }
+    html[${attribute}] :is(.history-record, .watchlater-list, .space-main) input { font-size: 16px; }
+    html[${attribute}] :is(.history-record, .watchlater-list, .space-main) :is(.vui_button, .radio-filter__item) { min-height: 40px; }
+    /* Official dialogs are teleported to body, outside the page's main shell. */
+    html[${attribute}]:is([data-bilispeed-page="history"], [data-bilispeed-page="watchlater"], [data-bilispeed-page="space"]) .vui_dialog--content {
+        min-width: 0 !important; max-width: calc(100vw - 24px) !important; max-height: calc(100dvh - 24px) !important;
+        overflow: auto; padding: 40px 16px 20px !important; box-sizing: border-box;
+    }
+    html[${attribute}]:is([data-bilispeed-page="history"], [data-bilispeed-page="watchlater"], [data-bilispeed-page="space"]) .vui_dialog--footer {
+        display: flex; flex-wrap: wrap; height: auto !important; gap: 8px;
+    }
+    html[${attribute}]:is([data-bilispeed-page="history"], [data-bilispeed-page="watchlater"], [data-bilispeed-page="space"]) .vui_dialog--btn {
+        flex: 1; min-width: 0 !important; width: auto !important; margin: 0 !important; min-height: 44px;
+    }
+    html[${attribute}]:is([data-bilispeed-page="history"], [data-bilispeed-page="watchlater"], [data-bilispeed-page="space"]) .vui_dialog--body { min-width: 0; overflow-wrap: anywhere; }
+    html[${attribute}] :is(.history-record, .watchlater-list, .space-main) :is(.vui_popover-content, .dp__menu) { max-width: calc(100vw - 24px) !important; box-sizing: border-box; }
+    html[${attribute}] :is(.history-record, .watchlater-list, .space-main) :is(button, a, input):focus-visible { outline: 2px solid #e8557f; outline-offset: 2px; }
+
     /* Account pages use a 980px shell and a 150px sidebar on desktop. */
     html[${attribute}][data-bilispeed-page="account"] #account-app,
     html[${attribute}][data-bilispeed-page="account"] .security_content {
@@ -487,18 +693,32 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
         if (location.hostname === 't.bilibili.com') return 'dynamic';
         if (location.pathname.startsWith('/video/')) return 'video';
         if (location.pathname.startsWith('/v/popular')) return 'popular';
+        if (/^\/(?:account\/)?history(?:\/|$)/.test(location.pathname)) return 'history';
+        if (location.pathname.startsWith('/watchlater')) return 'watchlater';
         if (location.pathname === '/' || location.pathname === '') return 'home';
         return 'other';
     }
 
     function isPageReady() {
-        if (document.readyState !== 'loading' && !document.querySelector('#app[data-server-rendered]')) return true;
+        const app = document.getElementById('app');
+        const bootstrap = document.querySelector('script[src*="/jinkela/video/video."]');
+        // Vue removes data-server-rendered at the START of hydration. Its root
+        // mount flag is the boundary after which adding our children is safe.
+        const mounted = app && (app.__vue__ && app.__vue__._isMounted
+            || app.__vue_app__ && app.__vue_app__._instance && app.__vue_app__._instance.isMounted);
+        if (mounted || document.readyState !== 'loading' && !bootstrap && !(app && app.hasAttribute('data-server-rendered'))) return true;
         if (!document.querySelector('#mirror-vdcon .video-toolbar-container')) return false;
         if (!hydrationStarted) {
             hydrationStarted = Date.now();
             // If the official bootstrap itself fails, still expose usable
             // controls and metadata instead of leaving skeletons forever.
             setTimeout(schedule, 3500);
+        }
+        if (bootstrap && !bootstrapFailed) {
+            if (!suspended && hydrationTimer === null) hydrationTimer = setTimeout(() => {
+                hydrationTimer = null; schedule();
+            }, 500);
+            return false;
         }
         return Date.now() - hydrationStarted >= 3500;
     }
@@ -543,6 +763,42 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
         wrap.setAttribute('data-bilispeed-danmaku-closed', '');
         const trigger = wrap.closest('.bpx-player-dm-setting');
         if (trigger) (trigger.querySelector('[data-bilispeed-danmaku-trigger]') || trigger).setAttribute('aria-expanded', 'false');
+    }
+
+    function libraryNavigation() {
+        const active = document.querySelector('.nav-tab__item.active');
+        if (active && previousSpaceRoute !== location.pathname) {
+            const nav = active.closest('.nav-tab');
+            if (nav) {
+                nav.scrollLeft += active.getBoundingClientRect().left - nav.getBoundingClientRect().left
+                    - (nav.clientWidth - active.getBoundingClientRect().width) / 2;
+                previousSpaceRoute = location.pathname;
+            }
+        }
+        const library = document.querySelector('.space-favlist');
+        const folders = library && library.querySelector('.favlist-aside');
+        if (!folders) return;
+        let toggle = library.querySelector('#bilispeed-folder-toggle');
+        if (!toggle) {
+            toggle = document.createElement('button');
+            toggle.id = 'bilispeed-folder-toggle'; toggle.type = 'button';
+            if (!folders.id) folders.id = 'bilispeed-folder-list';
+            toggle.setAttribute('aria-controls', folders.id);
+            toggle.setAttribute('aria-expanded', 'false');
+            toggle.addEventListener('click', () => {
+                const open = library.toggleAttribute('data-bilispeed-folders-open');
+                toggle.setAttribute('aria-expanded', String(open));
+            });
+            folders.addEventListener('click', event => {
+                if (!(event.target instanceof Element) || !event.target.closest('.vui_sidebar-item')) return;
+                library.removeAttribute('data-bilispeed-folders-open'); toggle.setAttribute('aria-expanded', 'false');
+                schedule();
+            });
+            folders.before(toggle); library.setAttribute('data-bilispeed-folders', '');
+        }
+        const selected = folders.querySelector('.vui_sidebar-item--active .vui_ellipsis');
+        const label = '收藏夹' + (selected && selected.textContent.trim() ? ' · ' + selected.textContent.trim() : '与收藏分类');
+        if (toggle.textContent !== label) toggle.textContent = label;
     }
 
     function danmakuSettings() {
@@ -637,6 +893,8 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
             if (window.__BiliTouchVideo) window.__BiliTouchVideo.refresh();
             videoTabs(); danmakuSettings(); commentLayout();
         }
+        if (page === 'space' && isPageReady()) libraryNavigation();
+        if (page === 'dynamic' || page === 'space') commentLayout();
         if (window.__BiliTouchPlayer) window.__BiliTouchPlayer.refresh();
     }
 
@@ -662,6 +920,7 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
         suspended = next;
         clearTimeout(refreshTimer);
         refreshTimer = null;
+        clearTimeout(hydrationTimer); hydrationTimer = null;
         observer.disconnect();
         clearTimeout(commentTimer); commentTimer = null;
         commentRoots.forEach(watcher => watcher.disconnect()); commentRoots.clear();
@@ -677,6 +936,12 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
     window.addEventListener('popstate', schedule);
     window.addEventListener('hashchange', schedule);
     window.addEventListener('pageshow', schedule);
+    window.addEventListener('error', event => {
+        const source = event.target instanceof HTMLScriptElement ? event.target.src : event.filename;
+        if (typeof source === 'string' && source.includes('/jinkela/video/video.')) {
+            bootstrapFailed = true; schedule();
+        }
+    }, true);
     document.addEventListener('click', event => {
         if (suspended || !(event.target instanceof Element) || event.target.closest('.bpx-player-dm-setting')) return;
         document.querySelectorAll('[data-bilispeed-danmaku-open]').forEach(closeDanmaku);

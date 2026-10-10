@@ -88,7 +88,7 @@ public class MyPageInstrumentationTest {
         String page = html.replace("<head>", "<head><script>window.myFixtureId=" + identity + ";" + fetch + "</script>");
         instrumentation.runOnMainSync(() -> {
             activity.browserForTesting().stopLoading();
-            activity.browserForTesting().loadDataWithBaseURL(MainActivity.MY_PAGE, page, "text/html", "UTF-8", null);
+            activity.browserForTesting().loadDataWithBaseURL(MainActivity.MY_PAGE, page, "text/html", "UTF-8", MainActivity.MY_PAGE);
         });
         await("window.myFixtureId===" + identity + " && document.querySelector('.shortcuts') && document.getElementById('status').textContent!=='正在加载账号信息…'");
     }
@@ -111,6 +111,19 @@ public class MyPageInstrumentationTest {
         js("document.getElementById('offline').click();true");
         assertTrue((Boolean) js("document.getElementById('offline-dialog').open && /暂不支持/.test(document.getElementById('offline-dialog').textContent)"));
         instrumentation.runOnMainSync(() -> assertTrue(label(activity.getWindow().getDecorView(), "我的").isSelected()));
+    }
+
+    @Test public void systemBackClosesMyPageDialogsBeforeLeavingThePage() throws Exception {
+        fixture("window.fetch=function(){return Promise.resolve({ok:true,json:function(){return Promise.resolve({code:-101,data:{isLogin:false}});}});};");
+        instrumentation.runOnMainSync(() -> assertEquals("Fixture must use the actual My page navigation URL", MainActivity.MY_PAGE, activity.browserForTesting().getUrl()));
+        for (String button : new String[]{"offline", "open-link"}) {
+            js("document.getElementById('" + button + "').click();true");
+            assertEquals(true, js("!!document.querySelector('dialog[open]')"));
+            instrumentation.runOnMainSync(activity::onBackPressed);
+            await("!document.querySelector('dialog[open]')");
+            assertEquals("/__bilispeed__/me", js("location.pathname"));
+            assertFalse(activity.isFinishing());
+        }
     }
 
     @Test public void loggedInProfileMatchesReferenceAndUsesAccountDestinations() throws Exception {

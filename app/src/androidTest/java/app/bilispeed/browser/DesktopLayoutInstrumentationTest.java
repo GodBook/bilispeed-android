@@ -70,6 +70,8 @@ public class DesktopLayoutInstrumentationTest {
 
     private void fixture(boolean video) throws Exception {
         int identity = ++fixtureId;
+        CountDownLatch committed = new CountDownLatch(1);
+        Object bridge = new Object() { @android.webkit.JavascriptInterface public void ready() { committed.countDown(); } };
         // Reproduce the desktop site's minimum widths and actual container hierarchy.
         String content = video
                 ? "<div id='mirror-vdcon'><div class='left-container'><div class='video-info-container'><h1>测试视频</h1></div>"
@@ -86,12 +88,17 @@ public class DesktopLayoutInstrumentationTest {
                 + ".container{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}.feed-card{height:100px}"
                 + "#mirror-vdcon{display:flex;width:1100px}.left-container{width:750px}.right-container{width:350px}"
                 + "#playerWrap{height:450px}#v{width:100%;height:100%}</style>"
-                + "<script>window.fixture=" + identity + ";</script><div id='app'>" + content + "</div>";
+                + "<script>window.fixture=" + identity + ";addEventListener('load',()=>LayoutFixtureLoaded.ready());</script><div id='app'>" + content + "</div>";
         String origin = MainActivity.HOME + (video ? "video/__bilispeed_layout__/" : "");
         instrumentation.runOnMainSync(() -> {
+            activity.browserForTesting().addJavascriptInterface(bridge, "LayoutFixtureLoaded");
             activity.browserForTesting().stopLoading();
             activity.browserForTesting().loadDataWithBaseURL(origin, html, "text/html", "UTF-8", null);
         });
+        // evaluateJavascript callbacks can be lost during document replacement.
+        // Wait for this specific fixture to commit before querying its behavior.
+        try { assertTrue("Layout fixture commit", committed.await(15, TimeUnit.SECONDS)); }
+        finally { instrumentation.runOnMainSync(() -> activity.browserForTesting().removeJavascriptInterface("LayoutFixtureLoaded")); }
         await("window.fixture === " + identity + " && window.__BiliSpeed");
     }
 

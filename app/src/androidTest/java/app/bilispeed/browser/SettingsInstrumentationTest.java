@@ -7,6 +7,9 @@ import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.Rect;
 import android.os.SystemClock;
+import android.os.Bundle;
+import android.view.KeyEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -14,6 +17,10 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Switch;
 import android.widget.TextView;
+import android.webkit.WebViewClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.test.platform.app.InstrumentationRegistry;
 import org.json.JSONTokener;
 import org.junit.After;
@@ -22,6 +29,8 @@ import org.junit.Test;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -53,17 +62,22 @@ public class SettingsInstrumentationTest {
     private void launchFixture() throws Exception {
         activity = (MainActivity) instrumentation.startActivitySync(new Intent(context, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        CountDownLatch committed = new CountDownLatch(1);
+        Object bridge = new Object() { @android.webkit.JavascriptInterface public void ready() { committed.countDown(); } };
         String html = "<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'>"
                 + "<style>body{margin:0}.bpx-player-video-area{height:220px}video{width:100%;height:100%}</style>"
                 + "<div id='playerWrap'><div id='bilibili-player'><div class='bpx-player-container'>"
                 + "<div class='bpx-player-video-area'><video id='v' playsinline muted loop src='" + media + "'></video>"
                 + "<div class='bpx-player-dm-container'></div></div></div></div></div>"
                 + "<div class='video-toolbar-container'></div><div class='left-container'><div class='video-desc'>简介</div>"
-                + "<div id='comment'>评论</div><div style='height:1800px'>滚动区域</div></div><script>window.pageIdentity={};</script>";
+                + "<div id='comment'>评论</div><div style='height:1800px'>滚动区域</div></div><script>window.pageIdentity={};addEventListener('load',()=>SettingsFixtureLoaded.ready());</script>";
         instrumentation.runOnMainSync(() -> {
+            activity.browserForTesting().addJavascriptInterface(bridge, "SettingsFixtureLoaded");
             activity.browserForTesting().stopLoading();
             activity.browserForTesting().loadDataWithBaseURL("https://www.bilibili.com/video/BV17x411w7KC/", html, "text/html", "UTF-8", null);
         });
+        try { assertTrue("Settings fixture commit", committed.await(15, TimeUnit.SECONDS)); }
+        finally { instrumentation.runOnMainSync(() -> activity.browserForTesting().removeJavascriptInterface("SettingsFixtureLoaded")); }
         await("window.__BiliSpeed && document.getElementById('v').readyState>=2 && !!document.getElementById('bilispeed-touch-controls')");
     }
 
@@ -124,6 +138,72 @@ public class SettingsInstrumentationTest {
         instrumentation.waitForIdleSync();
     }
     private void openSettings() { tap(labeled("B站设置")); }
+
+    private void awaitNative(java.util.function.BooleanSupplier condition, String label) {
+        long deadline = SystemClock.elapsedRealtime() + 10000;
+        AtomicReference<Boolean> ready = new AtomicReference<>(false);
+        do {
+            instrumentation.runOnMainSync(() -> ready.set(condition.getAsBoolean()));
+            if (ready.get()) return;
+            SystemClock.sleep(100);
+        } while (SystemClock.elapsedRealtime() < deadline);
+        fail(label);
+    }
+
+    private boolean keyboardVisible() {
+        View decor = activity.getWindow().getDecorView();
+        return WindowInsetsCompat.toWindowInsetsCompat(decor.getRootWindowInsets(), decor)
+                .isVisible(WindowInsetsCompat.Type.ime());
+    }
+
+    private void dialogAction(String text) {
+        AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
+        assertNotNull(root);
+        for (AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByText(text)) {
+            if ("android.widget.Button".contentEquals(node.getClassName()) && text.contentEquals(node.getText())) {
+                assertTrue(node.performAction(AccessibilityNodeInfo.ACTION_CLICK)); return;
+            }
+        }
+        fail("Missing dialog action: " + text);
+    }
+
+    @Test public void nativeSearchSubmitEnterAndCancelDismissKeyboardAndRestoreViewport() {
+        AtomicReference<Integer> originalHeight = new AtomicReference<>();
+        instrumentation.runOnMainSync(() -> {
+            originalHeight.set(activity.browserForTesting().getHeight());
+            activity.browserForTesting().setWebViewClient(new WebViewClient() {
+                @Override public WebResourceResponse shouldInterceptRequest(android.webkit.WebView view, WebResourceRequest request) {
+                    if (!"search.bilibili.com".equals(request.getUrl().getHost())) return null;
+                    return new WebResourceResponse("text/html", "UTF-8", new ByteArrayInputStream(
+                            "<!doctype html><meta name='viewport' content='width=device-width'><p>本地搜索结果夹具</p>".getBytes(StandardCharsets.UTF_8)));
+                }
+            });
+        });
+        for (String mode : new String[]{"button", "enter", "cancel"}) {
+            tap(labeled("B站搜索"));
+            awaitNative(this::keyboardVisible, "Search must actually show the phone keyboard");
+            AccessibilityNodeInfo input = instrumentation.getUiAutomation().getRootInActiveWindow().findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+            assertNotNull(input);
+            Bundle text = new Bundle();
+            text.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "Android");
+            assertTrue(input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, text));
+            if (mode.equals("button")) dialogAction("搜索");
+            else if (mode.equals("cancel")) dialogAction("取消");
+            else {
+                long now = SystemClock.uptimeMillis();
+                KeyEvent down = new KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER, 0, 0,
+                        android.view.KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, android.view.InputDevice.SOURCE_KEYBOARD);
+                KeyEvent up = new KeyEvent(now, now + 70, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0, 0,
+                        android.view.KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, android.view.InputDevice.SOURCE_KEYBOARD);
+                assertTrue(instrumentation.getUiAutomation().injectInputEvent(down, true));
+                assertTrue(instrumentation.getUiAutomation().injectInputEvent(up, true));
+            }
+            awaitNative(() -> !keyboardVisible(), "Keyboard remained after " + mode);
+            awaitNative(() -> activity.browserForTesting().getHeight() >= originalHeight.get() - 4, "Viewport stayed compressed after " + mode);
+            awaitNative(() -> MainActivity.searchUrl("Android").equals(activity.browserForTesting().getUrl()), "Search URL changed unexpectedly after " + mode);
+            System.out.println("BILISPEED_NATIVE_SEARCH_FLOW=" + mode + " viewportRestored=true keyboardHidden=true");
+        }
+    }
 
     @Test public void settingsTabKeepsPagePlaybackAndScrollAndNeverShowsFloatingButtons() throws Exception {
         js("window.originalIdentity=pageIdentity;window.scrollTo(0,350);document.getElementById('v').play();true");

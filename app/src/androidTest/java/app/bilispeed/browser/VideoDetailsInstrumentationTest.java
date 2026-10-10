@@ -48,6 +48,7 @@ public class VideoDetailsInstrumentationTest {
     }
     private void fixture(String script, String query) throws Exception {
         String html = "<!doctype html><meta name='viewport' content='width=1100'><script>" + script + "</script>"
+                + (script.contains("window.slowOfficialBootstrap=true") ? "<script type='application/json' src='https://s1.hdslb.com/bfs/static/jinkela/video/video.fixture.js'></script>" : "")
                 + "<style>body{min-width:1100px}#mirror-vdcon{display:flex;width:1100px}.left-container{width:750px}.right-container{width:350px}"
                 + ".video-pod-above-modules{width:350px;height:320px}#playerWrap{height:400px}</style>"
                 + (script.contains("window.deferHydration=true") ? "<div id='app' data-server-rendered='true'>" : "<div id='app'>")
@@ -108,8 +109,24 @@ public class VideoDetailsInstrumentationTest {
 
     @Test public void addedVideoSectionsWaitForOfficialServerMarkupToHydrate() throws Exception {
         fixture("window.deferHydration=true;window.__INITIAL_STATE__={videoData:" + DATA + "};", "");
-        assertFalse((Boolean) js("!!document.getElementById('bilispeed-episodes') || !!document.getElementById('bilispeed-video-tabs')"));
+        assertFalse((Boolean) js("!!document.getElementById('bilispeed-episodes') || !!document.getElementById('bilispeed-video-tabs') || !!document.getElementById('bilispeed-touch-controls')"));
         js("document.getElementById('app').removeAttribute('data-server-rendered');true");
+        await("document.querySelectorAll('#bilispeed-episodes a').length===2 && document.getElementById('bilispeed-video-tabs') && document.getElementById('bilispeed-touch-controls')");
+    }
+
+    @Test public void removedServerMarkerStillWaitsForTheOfficialVueMount() throws Exception {
+        fixture("window.deferHydration=true;window.slowOfficialBootstrap=true;window.__INITIAL_STATE__={videoData:" + DATA + "};", "");
+        js("document.getElementById('app').removeAttribute('data-server-rendered');true");
+        // Reproduce a bootstrap which lasts longer than the old 3.5s fallback.
+        SystemClock.sleep(3900);
+        assertFalse((Boolean) js("!!document.getElementById('bilispeed-episodes') || !!document.getElementById('bilispeed-video-tabs') || !!document.getElementById('bilispeed-touch-controls')"));
+        js("document.getElementById('app').__vue__={_isMounted:true};true");
+        await("document.querySelectorAll('#bilispeed-episodes a').length===2 && document.getElementById('bilispeed-video-tabs') && document.getElementById('bilispeed-touch-controls')");
+    }
+
+    @Test public void failedOfficialBootstrapKeepsDelayedMetadataAndControlFallback() throws Exception {
+        fixture("window.deferHydration=true;window.slowOfficialBootstrap=true;window.__INITIAL_STATE__={videoData:" + DATA + "};", "");
+        js("window.dispatchEvent(new ErrorEvent('error',{filename:'https://s1.hdslb.com/bfs/static/jinkela/video/video.fixture.js',message:'Fixture bootstrap failure'}));true");
         await("document.querySelectorAll('#bilispeed-episodes a').length===2 && document.getElementById('bilispeed-video-tabs') && document.getElementById('bilispeed-touch-controls')");
     }
 
