@@ -409,6 +409,12 @@ public class MainActivity extends Activity {
                     String payload = message.getData();
                     if (payload == null || payload.length() > 2048) return;
                     JSONObject data = new JSONObject(payload);
+                    if ("select-rate".equals(data.optString("type"))) {
+                        // The touch player's speed picker shares the native
+                        // preference and controller, including in fullscreen.
+                        if (foreground && isMainFrame) selectRate((float) data.optDouble("rate", Double.NaN));
+                        return;
+                    }
                     if (!"state".equals(data.optString("type"))) return;
                     if (!foreground) {
                         if (!data.optBoolean("suspended")) replyProxy.postMessage(configMessage());
@@ -480,6 +486,7 @@ public class MainActivity extends Activity {
             @Override public void onPageFinished(WebView view, String url) {
                 if (destroyed || view != browser) return;
                 progress.setVisibility(View.GONE);
+                notifyTouchFullscreen();
                 injectIntoPage();
                 CookieManager.getInstance().flush();
             }
@@ -773,7 +780,7 @@ public class MainActivity extends Activity {
             case "source": openExternal("https://github.com/" + BuildConfig.UPDATE_REPOSITORY); break;
             case "about":
                 new AlertDialog.Builder(this).setTitle("B站倍速浏览器 " + BuildConfig.VERSION_NAME)
-                        .setMessage("在底部「设置」调节 0.25–5x 倍速，修改后即时生效并自动保存。全屏播放时，先退出全屏即可进入设置。\n\n"
+                        .setMessage("在底部「设置」或视频播放栏调节 0.25–5x 倍速，修改后即时生效并自动保存。全屏播放时可直接点播放栏的倍速按钮。\n\n"
                                 + "手机触屏布局提供双击暂停、滑动进度、音量与字幕；关闭后可使用电脑原版和双指缩放。\n\n"
                                 + "这是个人第三方浏览器，内容、登录和播放权限由 B 站官方网页提供；暂不支持离线缓存。\n\n"
                                 + "更新来自本项目 GitHub Releases，下载和安装需手动确认。")
@@ -1397,8 +1404,14 @@ public class MainActivity extends Activity {
     }
 
     private void notifyTouchFullscreen() {
-        if (destroyed || !isBiliHttps(browser.getUrl())) return;
-        browser.evaluateJavascript("window.__BiliTouchPlayer && window.__BiliTouchPlayer.setFullscreen("
+        if (destroyed) return;
+        // A speed change in fullscreen refreshes the document-start script.
+        // Reset that cached bootstrap as well when fullscreen ends, so the
+        // next episode cannot inherit the previous document's fullscreen flag.
+        updateDocumentScript();
+        if (!isBiliHttps(browser.getUrl())) return;
+        browser.evaluateJavascript("window.__BILI_TOUCH_FULLSCREEN__=" + (fullscreenView != null)
+                + ";window.__BiliTouchPlayer && window.__BiliTouchPlayer.setFullscreen("
                 + (fullscreenView != null) + ");", null);
     }
 

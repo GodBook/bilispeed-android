@@ -8,26 +8,35 @@
     let suspended = !!window.__BILI_SPEED_SUSPENDED__;
     let rendered = '';
     let panel = null;
+    let navigation = { previous: null, next: null };
     const css = `
 #bilispeed-episodes { display: none; }
 html[data-bilispeed-touch] #bilispeed-episodes {
-    display: block; order: 4 !important; margin: 8px 12px; padding: 12px;
-    border-radius: 10px; background: #f6f7f8; color: #18191c; font: 14px/1.5 sans-serif;
+    display: block; order: 4 !important; margin: 8px 12px; padding: 0;
+    color: #18191c; font: 14px/1.5 sans-serif;
     min-width: 0; box-sizing: border-box;
 }
 html[data-bilispeed-touch] #bilispeed-episodes[hidden] { display: none; }
+#bilispeed-episodes .episode-group { padding: 12px; border-radius: 10px; background: #f6f7f8; }
+#bilispeed-episodes .episode-group + .episode-group { margin-top: 12px; }
 #bilispeed-episodes header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 #bilispeed-episodes h2 { font-size: 16px; line-height: 24px; margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+#bilispeed-episodes .episode-kind { display: block; color: #61666d; font-size: 12px; font-weight: 400; }
 #bilispeed-episodes .episode-count { color: #9499a0; white-space: nowrap; font-size: 13px; }
-#bilispeed-episodes .episode-list { max-height: 328px; overflow-y: auto; overscroll-behavior: contain; }
+#bilispeed-episodes .episode-list { position: relative; }
+#bilispeed-episodes .episode-list[data-expanded] { max-height: min(480px, 60vh); overflow-y: auto; overscroll-behavior: contain; }
 #bilispeed-episodes a { display: flex; align-items: center; gap: 10px; min-height: 48px; color: inherit;
-    text-decoration: none; touch-action: manipulation; border-radius: 5px; padding: 4px 8px; box-sizing: border-box; }
+    text-decoration: none; touch-action: manipulation; border-radius: 5px; padding: 8px; box-sizing: border-box; }
+#bilispeed-episodes a[hidden] { display: none; }
 #bilispeed-episodes a[aria-current] { color: #00a1d6; background: #eaf6fb; }
 #bilispeed-episodes a:active { background: #eaf6fb; }
 #bilispeed-episodes a:focus-visible, #bilispeed-episodes button:focus-visible { outline: 2px solid #00a1d6; outline-offset: -2px; }
-#bilispeed-episodes .episode-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#bilispeed-episodes .episode-index { flex: none; min-width: 20px; color: #9499a0; font-size: 12px; font-variant-numeric: tabular-nums; }
+#bilispeed-episodes .episode-title { flex: 1; min-width: 0; display: -webkit-box; -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
 #bilispeed-episodes time { color: #9499a0; font-size: 12px; font-variant-numeric: tabular-nums; flex: none; }
 #bilispeed-episodes button { border: 0; color: #00a1d6; background: transparent; min-height: 44px; padding: 0 10px; font: inherit; }
+#bilispeed-episodes .episode-actions { display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid #e3e5e7; margin-top: 8px; }
 #bilispeed-episodes p { margin: 0; color: #9499a0; }
 html[data-bilispeed-touch][data-bilispeed-episodes-ready] #mirror-vdcon :is(.video-pod-above-modules, #multi_page, .video-sections) { display: none !important; }
 html[data-bilispeed-touch] #mirror-vdcon :is(.up-panel-container, .video-pod, .video-sections, .video-desc-container) { max-width: 100%; box-sizing: border-box; }
@@ -108,14 +117,16 @@ html[data-bilispeed-touch] #mirror-vdcon :is(.up-panel-container, .video-pod, .v
 
     function duration(seconds) {
         const value = Math.max(0, Math.floor(Number(seconds) || 0));
-        return Math.floor(value / 60) + ':' + String(value % 60).padStart(2, '0');
+        const minutes = Math.floor(value / 60);
+        return (value >= 3600 ? Math.floor(value / 3600) + ':' + String(minutes % 60).padStart(2, '0') : minutes)
+            + ':' + String(value % 60).padStart(2, '0');
     }
 
     function groups(video) {
         const result = [];
         const pages = Array.isArray(video.pages) ? video.pages : [];
         if (pages.length > 1) {
-            result.push({ title: '分集', items: pages.map((page, index) => ({
+            result.push({ title: '分集', kind: 'parts', items: pages.map((page, index) => ({
                 bvid: video.bvid, aid: video.aid, page: Number(page.page) || index + 1,
                 title: page.part || '第 ' + (index + 1) + ' 集', duration: page.duration
             })) });
@@ -130,10 +141,31 @@ html[data-bilispeed-touch] #mirror-vdcon :is(.up-panel-container, .video-pod, .v
                     title: episode.title || episode.arc && episode.arc.title || '视频',
                     duration: episode.arc && episode.arc.duration || episode.page && episode.page.duration
                 })).filter(item => /^BV[0-9A-Za-z]{10}$/.test(item.bvid || '') || Number(item.aid) > 0);
-                if (items.length) result.push({ title: season.title + (season.sections.length > 1 ? ' · ' + section.title : ''), items });
+                if (items.length) result.push({ kind: 'collection', title: (season.title || '视频合集')
+                    + (season.sections.length > 1 && section.title ? ' · ' + section.title : ''), items });
             });
         }
         return result;
+    }
+
+    function episodeUrl(item) {
+        const id = /^BV[0-9A-Za-z]{10}$/.test(item.bvid || '') ? item.bvid : 'av' + Number(item.aid);
+        const url = new URL('https://www.bilibili.com/video/' + id + '/');
+        if (item.page > 1) url.searchParams.set('p', item.page);
+        return url.href;
+    }
+
+    function adjacent(sections, page) {
+        const parts = sections.find(section => section.kind === 'parts');
+        const part = parts ? parts.items.findIndex(item => item.page === page) : -1;
+        const collection = sections.filter(section => section.kind === 'collection').flatMap(section => section.items);
+        const episode = collection.findIndex(item => matches(item, key));
+        const target = item => item ? { url: episodeUrl(item), title: item.title } : null;
+        return {
+            previous: target(part > 0 ? parts.items[part - 1] : (page === 1 && episode > 0 ? collection[episode - 1] : null)),
+            next: target(part >= 0 && part < parts.items.length - 1 ? parts.items[part + 1]
+                : ((!parts || part === parts.items.length - 1) && episode >= 0 ? collection[episode + 1] : null))
+        };
     }
 
     function render() {
@@ -142,30 +174,58 @@ html[data-bilispeed-touch] #mirror-vdcon :is(.up-panel-container, .video-pod, .v
         const signature = key + ':' + page;
         if (rendered === signature) return;
         const sections = groups(data);
+        navigation = adjacent(sections, page);
         panel.replaceChildren();
         panel.hidden = sections.length === 0;
         panel.toggleAttribute('data-ready', sections.length > 0);
         document.documentElement.toggleAttribute('data-bilispeed-episodes-ready', sections.length > 0);
-        sections.forEach(section => {
+        sections.forEach((section, groupIndex) => {
+            const group = node('section', 'episode-group');
+            group.dataset.episodeKind = section.kind;
             const header = node('header');
-            const active = section.items.findIndex(item => matches(item, key) && item.page === page);
-            header.append(node('h2', '', section.title), node('span', 'episode-count',
+            const active = section.items.findIndex(item => matches(item, key) && (section.kind === 'collection' || item.page === page));
+            const title = node('h2', '', section.title);
+            const heading = node('div');
+            if (section.kind === 'collection') heading.appendChild(node('span', 'episode-kind', '合集'));
+            heading.appendChild(title);
+            header.append(heading, node('span', 'episode-count',
                 active < 0 ? section.items.length + ' 集' : (active + 1) + ' / ' + section.items.length));
             const list = node('div', 'episode-list');
-            section.items.forEach(item => {
-                const id = /^BV[0-9A-Za-z]{10}$/.test(item.bvid || '') ? item.bvid : 'av' + Number(item.aid);
-                const url = new URL('https://www.bilibili.com/video/' + id + '/');
-                if (item.page > 1) url.searchParams.set('p', item.page);
+            list.id = 'bilispeed-episode-list-' + groupIndex;
+            list.setAttribute('aria-label', section.title);
+            const start = Math.max(0, Math.min(active - 2, section.items.length - 5));
+            section.items.forEach((item, index) => {
                 // Real anchors deliberately reload the official player. Some
                 // desktop collection rows only have a mouse/Vue click handler.
-                const link = node('a'); link.href = url.href;
-                if (matches(item, key) && item.page === page) link.setAttribute('aria-current', 'true');
-                link.append(node('span', 'episode-title', item.title), node('time', '', duration(item.duration)));
+                const link = node('a'); link.href = episodeUrl(item); link.title = item.title;
+                link.hidden = index < start || index >= start + 5;
+                if (index === active) link.setAttribute('aria-current', 'true');
+                link.append(node('span', 'episode-index', index + 1), node('span', 'episode-title', item.title), node('time', '', duration(item.duration)));
                 list.appendChild(link);
             });
-            panel.append(header, list);
-            const selected = list.querySelector('[aria-current]');
-            if (selected) list.scrollTop = Math.max(0, selected.offsetTop - list.offsetTop - 48);
+            group.append(header, list);
+            if (section.items.length > 5) {
+                const actions = node('div', 'episode-actions');
+                const toggle = node('button', '', '展开全部 ' + section.items.length + ' 集'); toggle.type = 'button';
+                toggle.setAttribute('aria-controls', list.id); toggle.setAttribute('aria-expanded', 'false');
+                toggle.setAttribute('data-episode-toggle', '');
+                const locate = node('button', '', '定位当前集'); locate.type = 'button'; locate.hidden = true;
+                const positionCurrent = () => {
+                    const selected = list.querySelector('[aria-current]');
+                    if (selected) list.scrollTop = Math.max(0, selected.offsetTop - (list.clientHeight - selected.offsetHeight) / 2);
+                };
+                toggle.addEventListener('click', () => {
+                    const expanded = list.toggleAttribute('data-expanded');
+                    Array.from(list.children).forEach((link, index) => { link.hidden = !expanded && (index < start || index >= start + 5); });
+                    toggle.setAttribute('aria-expanded', String(expanded));
+                    toggle.textContent = expanded ? '收起选集' : '展开全部 ' + section.items.length + ' 集';
+                    locate.hidden = !expanded || active < 0;
+                    if (expanded) positionCurrent(); else list.scrollTop = 0;
+                });
+                locate.addEventListener('click', positionCurrent);
+                actions.append(toggle, locate); group.appendChild(actions);
+            }
+            panel.appendChild(group);
         });
         rendered = signature;
         if (window.__BiliTouch) window.__BiliTouch.refresh();
@@ -195,6 +255,7 @@ html[data-bilispeed-touch] #mirror-vdcon :is(.up-panel-container, .video-pod, .v
         if (identity !== key) {
             if (pending) pending.abort(); pending = null;
             key = identity; data = null; failed = false; rendered = '';
+            navigation = { previous: null, next: null };
             document.documentElement.removeAttribute('data-bilispeed-episodes-ready');
             if (panel) { panel.hidden = true; panel.removeAttribute('data-ready'); }
         }
@@ -214,7 +275,12 @@ html[data-bilispeed-touch] #mirror-vdcon :is(.up-panel-container, .video-pod, .v
         if (suspended && pending) { const old = pending; pending = null; old.abort(); }
         if (!suspended) refresh();
     }
-    Object.defineProperty(window, '__BiliTouchVideo', { value: Object.freeze({ refresh, setSuspended }) });
+    Object.defineProperty(window, '__BiliTouchVideo', { value: Object.freeze({ refresh, setSuspended,
+        getNavigation() {
+            const page = Math.max(1, Number(new URL(location.href).searchParams.get('p')) || 1);
+            return !suspended && key === route() && rendered === key + ':' + page ? navigation : { previous: null, next: null };
+        }
+    }) });
     document.addEventListener('DOMContentLoaded', refresh, { once: true });
     window.addEventListener('popstate', refresh);
     window.addEventListener('hashchange', refresh);

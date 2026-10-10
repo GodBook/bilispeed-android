@@ -40,7 +40,7 @@ html[data-bilispeed-touch] [data-bilispeed-player] video {
 }
 html[data-bilispeed-touch] [data-bilispeed-player] .bpx-player-control-wrap { display: none !important; }
 html[data-bilispeed-touch] #bilispeed-touch-controls {
-    display: grid; grid-template-columns: 44px minmax(0, 1fr) auto auto auto;
+    display: grid; grid-template-columns: auto 44px auto minmax(0, 1fr) auto auto auto auto;
     align-items: center; gap: 0 2px; position: absolute; bottom: 0; left: 0; right: 0; z-index: 100;
     box-sizing: border-box; padding: 12px 8px 4px;
     color: #fff; background: linear-gradient(transparent, rgba(0, 0, 0, .8));
@@ -54,6 +54,7 @@ html[data-bilispeed-touch] #bilispeed-touch-controls button {
     color: #fff; background: transparent; font: 13px sans-serif; touch-action: manipulation;
 }
 html[data-bilispeed-touch] #bilispeed-touch-controls button[aria-pressed="true"] { color: #ff91b2; }
+html[data-bilispeed-touch] #bilispeed-touch-controls button[hidden] { display: none !important; }
 html[data-bilispeed-touch] #bilispeed-touch-controls :focus-visible { outline: 2px solid #ff91b2; outline-offset: -2px; }
 html[data-bilispeed-touch] #bilispeed-touch-controls :disabled { opacity: .45; }
 html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="subtitles"] {
@@ -68,8 +69,9 @@ html[data-bilispeed-touch] #bilispeed-touch-controls input[type="range"] {
 html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="seek"] { grid-column: 1 / -1; width: 100%; }
 html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="play"] { font-size: 20px; }
 html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="time"] {
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
+    min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
 }
+html[data-bilispeed-touch] #bilispeed-touch-controls:not([data-has-episodes]) { grid-template-columns: 44px minmax(0, 1fr) auto auto auto auto; }
 html[data-bilispeed-touch] #bilispeed-player-panel {
     position: absolute; right: 8px; bottom: 4px; width: min(280px, calc(100% - 16px));
     max-height: min(260px, calc(var(--bilispeed-player-height, 100vh) - 16px)); overflow: auto; padding: 12px; box-sizing: border-box;
@@ -82,6 +84,13 @@ html[data-bilispeed-touch] #bilispeed-seek-feedback[hidden] { display: none !imp
 html[data-bilispeed-touch] #bilispeed-player-panel header { display: flex; align-items: center; justify-content: space-between; }
 html[data-bilispeed-touch] #bilispeed-player-panel [data-bilispeed-control="volume-slider"] { width: 100%; height: 44px; }
 html[data-bilispeed-touch] #bilispeed-player-panel [data-subtitle-option] { display: block; width: 100%; text-align: left; }
+html[data-bilispeed-touch] #bilispeed-player-panel .speed-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+html[data-bilispeed-touch] #bilispeed-player-panel .speed-presets button[aria-pressed="true"] { background: #51333e; }
+html[data-bilispeed-touch] #bilispeed-player-panel .speed-custom { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+html[data-bilispeed-touch] #bilispeed-player-panel .speed-custom input { min-width: 0; width: 100%; min-height: 44px; box-sizing: border-box;
+    border: 1px solid #777; border-radius: 6px; padding: 0 8px; font: inherit; color: #fff; background: #303136; }
+html[data-bilispeed-touch] #bilispeed-player-panel .speed-custom button { flex: none; }
+html[data-bilispeed-touch] #bilispeed-player-panel [data-bilispeed-control="speed-error"] { color: #ff91b2; }
 html[data-bilispeed-touch] #bilispeed-player-panel p { line-height: 1.6; margin: 8px 0; }
 html[data-bilispeed-touch] #bilispeed-seek-feedback {
     position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%); z-index: 101;
@@ -105,9 +114,20 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="full"],
 html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
     width: 100% !important; height: 100% !important; min-width: 0 !important; margin: 0 !important;
 }
+@media (max-width: 560px) {
+    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] { grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr) 44px 44px auto; padding-top: 6px; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] [data-bilispeed-control="play"] { grid-area: 2 / 1 / 3 / 2; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] [data-bilispeed-control="time"] { grid-area: 2 / 2 / 3 / 5; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] [data-bilispeed-control="speed"] { grid-area: 2 / 5 / 3 / 6; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] [data-bilispeed-control="fullscreen"] { grid-area: 2 / 6 / 3 / 7; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] [data-bilispeed-control="previous"] { grid-area: 3 / 1 / 4 / 3; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] [data-bilispeed-control="next"] { grid-area: 3 / 3 / 4 / 5; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] [data-bilispeed-control="volume"] { grid-area: 3 / 5 / 4 / 6; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] [data-bilispeed-control="subtitles"] { grid-area: 3 / 6 / 4 / 7; }
+}
 @media (max-width: 360px) {
-    html[data-bilispeed-touch] #bilispeed-touch-controls { grid-template-columns: 40px minmax(0, 1fr) auto auto auto; padding-left: 4px; padding-right: 4px; }
-    html[data-bilispeed-touch] #bilispeed-touch-controls button { min-width: 40px; padding: 0 4px; font-size: 12px; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls { padding-left: 4px; padding-right: 4px; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls button { padding: 0 4px; font-size: 12px; }
     html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="time"] { font-size: 11px; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -180,6 +200,7 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         parts.panel.hidden = true;
         parts.volume.setAttribute('aria-expanded', 'false');
         parts.subtitles.setAttribute('aria-expanded', 'false');
+        parts.speed.setAttribute('aria-expanded', 'false');
         scheduleHide();
     }
 
@@ -336,11 +357,45 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         parts.panel.hidden = false;
         parts.volumePanel.hidden = name !== 'volume';
         parts.subtitlePanel.hidden = name !== 'subtitles';
+        parts.speedPanel.hidden = name !== 'speed';
         parts.volume.setAttribute('aria-expanded', String(name === 'volume'));
         parts.subtitles.setAttribute('aria-expanded', String(name === 'subtitles'));
-        setText(parts.panelTitle, name === 'volume' ? '音量' : '字幕');
+        parts.speed.setAttribute('aria-expanded', String(name === 'speed'));
+        setText(parts.panelTitle, name === 'volume' ? '音量' : name === 'speed' ? '播放倍速' : '字幕');
+        if (name === 'speed') {
+            parts.customRate.value = String(selectedRate());
+            parts.speedError.hidden = true;
+        }
         showControls(); update();
         if (name === 'subtitles') renderSubtitles();
+    }
+
+    function selectedRate() {
+        return window.__BiliSpeed ? window.__BiliSpeed.snapshot().selected : Number(window.__BILI_SPEED_INITIAL__) || 1;
+    }
+
+    function chooseRate(rate) {
+        if (!Number.isFinite(rate) || rate < .25 || rate > 5) {
+            parts.speedError.hidden = false; return;
+        }
+        parts.speedError.hidden = true;
+        parts.customRate.blur();
+        // Native selection also persists the preference and configures every
+        // frame. A local media-only change would be overwritten by its guard.
+        if (window.BiliSpeedBridge) window.BiliSpeedBridge.postMessage(JSON.stringify({ type: 'select-rate', rate }));
+        else if (window.__BiliSpeed) window.__BiliSpeed.setRate(rate);
+        showControls();
+    }
+
+    async function changeEpisode(direction) {
+        const state = window.__BiliTouchVideo && window.__BiliTouchVideo.getNavigation();
+        const target = state && state[direction];
+        if (!target || suspended) return;
+        cancelPreview(); closePanel();
+        if (document.fullscreenElement) {
+            try { await document.exitFullscreen(); } catch (_) { }
+        } else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
+        location.assign(target.url);
     }
 
     function createControls() {
@@ -375,10 +430,14 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         });
         range.addEventListener('pointercancel', () => { cancelPreview(); update(); });
         const play = button('play', '▶', () => togglePlayback(false));
+        const previous = button('previous', '上一集', () => changeEpisode('previous'));
+        const next = button('next', '下一集', () => changeEpisode('next'));
+        previous.hidden = next.hidden = true;
         const time = document.createElement('span');
         time.dataset.bilispeedControl = 'time';
         const volume = button('volume', '音量', () => togglePanel('volume'));
         const subtitles = button('subtitles', '字幕', () => togglePanel('subtitles'));
+        const speed = button('speed', '倍速', () => togglePanel('speed'));
         const full = button('fullscreen', '全屏', () => {
             if (document.fullscreenElement) document.exitFullscreen().catch(() => update());
             else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
@@ -421,13 +480,36 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         volumePanel.append(volumeSlider, volumeValue, mute);
         const subtitlePanel = document.createElement('div');
         subtitlePanel.hidden = true;
-        settings.append(header, volumePanel, subtitlePanel);
-        [volume, subtitles].forEach(item => { item.setAttribute('aria-controls', settings.id); item.setAttribute('aria-expanded', 'false'); });
-        controls.append(range, play, time, volume, subtitles, full, settings);
+        const speedPanel = document.createElement('div'); speedPanel.hidden = true;
+        const presets = document.createElement('div'); presets.className = 'speed-presets';
+        [.25, .5, .75, 1, 1.25, 1.5, 2, 2.5, 3, 3.5, 4, 5].forEach(rate => {
+            const option = button('speed-preset', rate + 'x', () => chooseRate(rate));
+            option.dataset.rate = String(rate);
+            option.setAttribute('aria-label', '选择 ' + rate + ' 倍速');
+            presets.appendChild(option);
+        });
+        const custom = document.createElement('div'); custom.className = 'speed-custom';
+        const customRate = document.createElement('input');
+        customRate.type = 'number'; customRate.min = '.25'; customRate.max = '5'; customRate.step = '.01'; customRate.inputMode = 'decimal';
+        customRate.dataset.bilispeedControl = 'custom-rate'; customRate.setAttribute('aria-label', '自定义倍速，0.25 到 5');
+        const applyRate = () => chooseRate(customRate.value.trim() ? Number(customRate.value) : NaN);
+        const apply = button('apply-rate', '应用', applyRate);
+        customRate.addEventListener('keydown', event => {
+            if (event.key === 'Enter') { event.preventDefault(); applyRate(); customRate.blur(); }
+        });
+        custom.append(customRate, apply);
+        const speedError = document.createElement('p'); speedError.hidden = true;
+        speedError.dataset.bilispeedControl = 'speed-error'; speedError.setAttribute('role', 'alert');
+        speedError.textContent = '请输入 0.25–5 之间的倍速。';
+        speedPanel.append(presets, custom, speedError);
+        settings.append(header, volumePanel, subtitlePanel, speedPanel);
+        [volume, subtitles, speed].forEach(item => { item.setAttribute('aria-controls', settings.id); item.setAttribute('aria-expanded', 'false'); });
+        controls.append(range, previous, play, next, time, speed, volume, subtitles, full, settings);
         feedback = document.createElement('div');
         feedback.id = 'bilispeed-seek-feedback'; feedback.hidden = true;
-        parts = { range, play, time, volume, subtitles, full, panel: settings, panelTitle: title,
-            volumePanel, volumeSlider, volumeValue, mute, subtitlePanel, subtitleOptions: subtitlePanel };
+        parts = { range, play, previous, next, time, speed, volume, subtitles, full, panel: settings, panelTitle: title,
+            volumePanel, volumeSlider, volumeValue, mute, subtitlePanel, subtitleOptions: subtitlePanel,
+            speedPanel, presets, customRate, speedError };
     }
 
     function ignoreTarget(target) {
@@ -542,6 +624,28 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         // Fullscreen controls are usually hidden. Catch up when shown instead
         // of changing their range, labels and subtitle queries on timeupdate.
         if (controls.dataset.hidden === 'true' && !panel && preview === null && !gesture) return;
+        const navigation = window.__BiliTouchVideo && window.__BiliTouchVideo.getNavigation();
+        const hasEpisodes = !!(navigation && (navigation.previous || navigation.next));
+        if (controls.hasAttribute('data-has-episodes') !== hasEpisodes) {
+            controls.toggleAttribute('data-has-episodes', hasEpisodes);
+            updateLayout();
+        }
+        ['previous', 'next'].forEach(direction => {
+            const item = parts[direction], target = navigation && navigation[direction];
+            if (item.hidden === hasEpisodes) item.hidden = !hasEpisodes;
+            item.disabled = !target;
+            setAttribute(item, 'aria-label', (direction === 'previous' ? '上一集' : '下一集') + (target ? '：' + target.title : '，暂无'));
+            if (target) setAttribute(item, 'data-episode-url', target.url);
+            else item.removeAttribute('data-episode-url');
+        });
+        const rate = selectedRate();
+        const live = video.duration === Infinity;
+        parts.speed.disabled = live;
+        setText(parts.speed, (live ? 1 : rate) + 'x');
+        setAttribute(parts.speed, 'aria-label', live ? '直播保持 1 倍速' : '播放倍速 ' + rate + 'x，点击调节');
+        if (panel === 'speed') parts.presets.querySelectorAll('[data-rate]').forEach(option => {
+            setAttribute(option, 'aria-pressed', String(Math.abs(Number(option.dataset.rate) - rate) < .001));
+        });
         const playing = !video.paused && !video.ended;
         setText(parts.play, playing ? 'Ⅱ' : '▶');
         setAttribute(parts.play, 'aria-label', playing ? '暂停视频' : '播放视频');
@@ -601,7 +705,7 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         bindHost(host);
         if (!managedVideos.has(active)) {
             managedVideos.add(active);
-            ['timeupdate', 'play', 'pause', 'ended', 'loadedmetadata', 'durationchange', 'volumechange', 'seeking', 'seeked'].forEach(name => {
+            ['timeupdate', 'play', 'pause', 'ended', 'loadedmetadata', 'durationchange', 'volumechange', 'ratechange', 'seeking', 'seeked'].forEach(name => {
                 active.addEventListener(name, () => { if (active === video) { update(); if (name === 'loadedmetadata') updateLayout(); } }, { passive: true });
             });
             ['loadstart', 'emptied'].forEach(name => active.addEventListener(name, () => { if (active === video) { cancelPreview(); closePanel(); update(); } }, { passive: true }));

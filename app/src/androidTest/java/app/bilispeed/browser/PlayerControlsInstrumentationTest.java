@@ -16,6 +16,10 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 
 import androidx.test.platform.app.InstrumentationRegistry;
 
@@ -26,11 +30,13 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.FileInputStream;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -41,6 +47,7 @@ import static org.junit.Assert.*;
 public class PlayerControlsInstrumentationTest {
     private final Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
     private MainActivity activity;
+    private String fixtureHtml;
     private static String media;
     private long touchStart;
     private boolean inputActive;
@@ -63,6 +70,12 @@ public class PlayerControlsInstrumentationTest {
         }
         activity = (MainActivity) instrumentation.startActivitySync(new Intent(context, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        String width = InstrumentationRegistry.getArguments().getString("layoutWidth");
+        if (width != null) instrumentation.runOnMainSync(() -> {
+            android.view.ViewGroup.LayoutParams params = activity.browserForTesting().getLayoutParams();
+            params.width = Math.round(Integer.parseInt(width) * activity.getResources().getDisplayMetrics().density);
+            activity.browserForTesting().setLayoutParams(params);
+        });
         String html = "<!doctype html><meta name='viewport' content='width=1100'>"
                 + "<style>body{margin:0;min-width:1100px}#mirror-vdcon{width:1100px;display:flex}"
                 + ".left-container{width:750px}.right-container{width:350px}#playerWrap{height:450px}"
@@ -79,11 +92,13 @@ public class PlayerControlsInstrumentationTest {
                 + "<div class='bpx-player-control-wrap'>官方控制栏</div></div></div></div></div>"
                 + "<div class='video-toolbar-container'>官方点赞、收藏</div><p>测试视频简介</p></div>"
                 + "<div class='right-container'><p style='height:900px'>推荐与评论</p></div></div></div>";
+        fixtureHtml = html;
         instrumentation.runOnMainSync(() -> {
             activity.browserForTesting().stopLoading();
             activity.browserForTesting().loadDataWithBaseURL("https://www.bilibili.com/video/__bilispeed_controls__/", html, "text/html", "UTF-8", null);
         });
         await("window.playerFixture && window.__BiliTouchPlayer && document.getElementById('v').readyState>=2 && " + CONTROLS);
+        if (width != null) assertEquals(Integer.parseInt(width), ((Number) js("innerWidth")).doubleValue(), 1);
         js("window.v=document.getElementById('v');v.pause();v.currentTime=1;true");
         await("!v.seeking && v.currentTime>0.9");
     }
@@ -114,6 +129,7 @@ public class PlayerControlsInstrumentationTest {
             SystemClock.sleep(100);
         }
         System.out.println("BILISPEED_CONTROL_DIAGNOSTIC=" + js("JSON.stringify({time:window.v&&v.currentTime,"
+                + "nativeFullscreen:window.__BILI_TOUCH_FULLSCREEN__,domFullscreen:!!document.fullscreenElement,layoutFullscreen:document.documentElement.hasAttribute('data-bilispeed-fullscreen'),"
                 + "hidden:document.getElementById('bilispeed-touch-controls')&&document.getElementById('bilispeed-touch-controls').dataset.hidden,"
                 + "events:window.fullTouchTrace,viewport:{width:innerWidth,height:innerHeight}})"));
         screenshot("BiliSpeed-player-failure");
@@ -392,6 +408,93 @@ public class PlayerControlsInstrumentationTest {
         screenshot("BiliSpeed-player-volume");
     }
 
+    @Test public void toolbarSpeedUsesNativePreferenceValidatesCustomInputAndSurvivesRestart() throws Exception {
+        tap("[data-bilispeed-control=speed]");
+        await("!document.getElementById('bilispeed-player-panel').hidden");
+        tap("[data-rate=\"1.5\"]");
+        await("v.playbackRate===1.5&&document.querySelector('[data-bilispeed-control=speed]').textContent==='1.5x'");
+        assertEquals(1.5f, instrumentation.getTargetContext().getSharedPreferences("playback", 0).getFloat("rate", 0), .001f);
+        assertEquals("true", js("document.querySelector('[data-rate=\"1.5\"]').getAttribute('aria-pressed')"));
+        js("var input=document.querySelector('[data-bilispeed-control=custom-rate]');input.scrollIntoView({block:'nearest'});input.value='5.5';true");
+        tap("[data-bilispeed-control=apply-rate]");
+        assertFalse((Boolean) js("document.querySelector('[data-bilispeed-control=speed-error]').hidden"));
+        assertEquals(1.5, ((Number) js("v.playbackRate")).doubleValue(), .001);
+        js("document.querySelector('[data-bilispeed-control=custom-rate]').value='2.75';true");
+        tap("[data-bilispeed-control=apply-rate]");
+        await("v.playbackRate===2.75");
+        assertEquals(2.75f, instrumentation.getTargetContext().getSharedPreferences("playback", 0).getFloat("rate", 0), .001f);
+        click("close-panel");
+        instrumentation.runOnMainSync(() -> activity.selectRate(3.5f));
+        await("v.playbackRate===3.5&&document.querySelector('[data-bilispeed-control=speed]').textContent==='3.5x'");
+        instrumentation.runOnMainSync(activity::finish); instrumentation.waitForIdleSync();
+        Context context = instrumentation.getTargetContext();
+        activity = (MainActivity) instrumentation.startActivitySync(new Intent(context, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        instrumentation.runOnMainSync(() -> activity.browserForTesting().loadDataWithBaseURL(
+                "https://www.bilibili.com/video/__bilispeed_controls__/", "<!doctype html><script>window.rateRestartFixture=true;</script><video></video>", "text/html", "UTF-8", null));
+        await("window.rateRestartFixture&&window.__BiliSpeed&&window.__BiliSpeed.snapshot().selected===3.5");
+    }
+
+    @Test public void fullscreenSpeedPickerChangesRateWithoutLeavingFullscreenAndStaysOpen() throws Exception {
+        tap("[data-bilispeed-control=fullscreen]");
+        await("document.fullscreenElement&&innerWidth>innerHeight&&" + CONTROLS + ".dataset.hidden==='true'");
+        dismissImmersiveHint(instrumentation);
+        SystemClock.sleep(400);
+        tap(HOST); await(CONTROLS + ".dataset.hidden==='false'");
+        tap("[data-bilispeed-control=speed]");
+        tap("[data-rate=\"1.5\"]");
+        await("v.playbackRate===1.5");
+        assertTrue((Boolean) js("!!document.fullscreenElement"));
+        SystemClock.sleep(3300);
+        assertEquals("false", js(CONTROLS + ".dataset.hidden"));
+        assertTrue((Boolean) js("(function(){var r=document.getElementById('bilispeed-player-panel').getBoundingClientRect();return r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;})()"));
+        screenshot("BiliSpeed-1.2.8-fullscreen-speed");
+    }
+
+    @Test public void fullscreenRateThenNextEpisodeDoesNotLeakFullscreenIntoTheNewDocument() throws Exception {
+        String metadata = "window.__INITIAL_STATE__={videoData:{bvid:'BV17x411w7KC',aid:170001,pages:[{page:1,part:'第一集'},{page:2,part:'第二集'}]}};";
+        js("history.replaceState({},'', '/video/BV17x411w7KC/');" + metadata + "window.__BiliTouch.refresh();true");
+        await("document.querySelector('[data-bilispeed-control=next][data-episode-url]')");
+        CountDownLatch nextReady = new CountDownLatch(1);
+        Object loaded = new Object() { @android.webkit.JavascriptInterface public void ready() { nextReady.countDown(); } };
+        byte[] nextDocument = (fixtureHtml + "<script>window.nextEpisodeFixture=true;" + metadata
+                + "addEventListener('load',()=>NextEpisodeFixtureLoaded.ready());</script>").getBytes(StandardCharsets.UTF_8);
+        instrumentation.runOnMainSync(() -> {
+            activity.browserForTesting().addJavascriptInterface(loaded, "NextEpisodeFixtureLoaded");
+            activity.browserForTesting().setWebViewClient(new WebViewClient() {
+            @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                if (request.isForMainFrame() && "/video/BV17x411w7KC/".equals(request.getUrl().getPath()))
+                    return new WebResourceResponse("text/html", "UTF-8", new ByteArrayInputStream(nextDocument));
+                return null;
+            }
+            });
+        });
+        tap("[data-bilispeed-control=fullscreen]");
+        await("document.fullscreenElement&&innerWidth>innerHeight&&" + CONTROLS + ".dataset.hidden==='true'");
+        dismissImmersiveHint(instrumentation); SystemClock.sleep(400);
+        tap(HOST); await(CONTROLS + ".dataset.hidden==='false'");
+        tap("[data-bilispeed-control=speed]"); tap("[data-rate=\"2\"]");
+        await("v.playbackRate===2");
+        click("close-panel"); tap("[data-bilispeed-control=next]");
+        try { assertTrue("Next episode document did not commit", nextReady.await(15, TimeUnit.SECONDS)); }
+        finally { instrumentation.runOnMainSync(() -> activity.browserForTesting().removeJavascriptInterface("NextEpisodeFixtureLoaded")); }
+        await("window.nextEpisodeFixture&&location.search==='?p=2'&&document.querySelector('video').readyState>=2&&document.getElementById('bilispeed-touch-controls')");
+        await("!document.documentElement.hasAttribute('data-bilispeed-fullscreen')&&document.querySelector('video').playbackRate===2");
+        assertFalse((Boolean) js("window.__BILI_TOUCH_FULLSCREEN__||!!document.fullscreenElement"));
+        instrumentation.runOnMainSync(() -> assertFalse(activity.fullscreenForTesting()));
+        // A queued speed configuration from the previous fullscreen page must
+        // not reinstate its obsolete fullscreen flag after Android has exited.
+        js("window.__BiliSpeed.configure({type:'config',rate:2,suspended:false,fullscreen:true});true");
+        assertFalse((Boolean) js("window.__BILI_TOUCH_FULLSCREEN__||document.documentElement.hasAttribute('data-bilispeed-fullscreen')"));
+        // Reproduce the official mini-player state reached by scrolling to
+        // episodes after that navigation. It must remain in its document slot.
+        js("var player=document.querySelector('.bpx-player-container');player.dataset.screen='mini';"
+                + "player.style.cssText='position:fixed;right:84px;bottom:48px;width:320px;height:180px';"
+                + "window.v=document.querySelector('video');window.__BiliTouch.refresh();true");
+        assertEquals("relative", js("getComputedStyle(document.querySelector('.bpx-player-container')).position"));
+        assertContained();
+    }
+
     @Test public void subtitleLanguagesAndOffOperateRealTextTracks() throws Exception {
         js("window.zh=v.addTextTrack('subtitles','中文字幕','zh');zh.addCue(new VTTCue(0,5,'测试字幕'));"
                 + "window.en=v.addTextTrack('subtitles','English','en');en.addCue(new VTTCue(0,5,'Test caption'));true");
@@ -626,7 +729,7 @@ public class PlayerControlsInstrumentationTest {
     private void assertContained() throws Exception {
         assertTrue((Boolean) js("(function(){var h=document.querySelector('" + HOST + "').getBoundingClientRect();"
                 + "return document.documentElement.scrollWidth<=innerWidth+2 && getComputedStyle(v).objectFit==='contain' && "
-                + "Array.from(document.querySelectorAll('#bilispeed-touch-controls>button')).every(function(b){var r=b.getBoundingClientRect();"
-                + "return r.width>=40 && r.height>=44 && r.left>=h.left-1 && r.right<=h.right+1 && r.bottom<=h.bottom+1;});})()"));
+                + "Array.from(document.querySelectorAll('#bilispeed-touch-controls>button:not([hidden])')).every(function(b){var r=b.getBoundingClientRect();"
+                + "return r.width>=44 && r.height>=44 && r.left>=h.left-1 && r.right<=h.right+1 && r.bottom<=h.bottom+1;});})()"));
     }
 }

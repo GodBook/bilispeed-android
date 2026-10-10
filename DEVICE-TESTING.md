@@ -1,4 +1,24 @@
-# 2026-10-10 1.2.7 全界面真机适配检查点
+# 2026-10-10 1.2.8 分集与播放栏检查点
+
+当前需求：修复截图中的分集显示，在播放控制栏添加上一集、下一集与倍速按钮；在电脑连接的手机测试通过后更新 GitHub 与 Release。
+
+工作位置：main，起点 621d316 / 1.2.7，开始时工作区干净。已连接小米 9 SE（10.93.192.96:5555）。已运行 DevicePreferencesProbe#savePreferences 保存原偏好；保留原签名和 Cookies，收尾必须恢复偏好并结束临时调试。
+
+同一视频已找到：BV1T6VFzAE1c（Kira 概率论），73 P、2 个合集视频。基线真机复现固定 328px 列表无展开提示、长标题省略、1558:00 时长，以及第 2 P 时合集不再高亮且只显示「2 集」。基线截图为 artifacts/device-1.2.8-baseline-episodes.png。
+
+当前状态：最终候选 7CBA4F46011ED08E9F1418E8C21A09F9FB051DDDDA1CAAC9DB672965EDBF8031 / 1813362 字节已取得完整 93 项通过（355.339 秒，release-93-regression.txt）、同机 320px 的 14 项通过（37.36 秒，release-320.txt）及实站 12 状态全部通过。播放器 20 项专项亦通过（104.2 秒，controls-release.txt）。手机拉取包 final-installed.apk 与候选一致，候选已归档 artifacts/tested-1.2.8。没有待修复或待复测的生产代码。
+
+实站证据：device-1.2.8-verified-course.txt（7）、verified-boundaries.txt（3）、verified-single.txt（2）；最终 JSON 和原生截图统一前缀 device-1.2.8-final-。原偏好恢复成功（restored-final.txt），快照已自动删除，screen_off_timeout 恢复 600000；检查会话均结束，tcp9222 已移除。待提交已验证源码、从提交重构正式 APK、比较 ZIP 条目仅 Git 记录变化、推送源码/标签并发布三个附件；最后安装正式包并卸载测试 runner。
+
+前一候选 0FBE84D904232906B746F8CC26C47B5C26F0AF77F4BB9B7B2BFCF0259E573F94 虽取得 320px 的 14 项和实站 12 状态通过，完整 93 项有 1 项在系统返回退出全屏后未显示控件，因此已淘汰。现已将全屏状态同步限定为原生进出通知与新页面加载完成，移除倍速 config 中可能迟到的全屏字段；新增回归拒绝旧倍速配置恢复全屏，最终整组已通过。
+
+已修复的实站问题：全屏内选速后换页残留全屏标记，document.fullscreenElement=null，但新文档 __BILI_TOUCH_FULLSCREEN__=true，导致滚动后的官方 mini 播放器左边为 -11px。原因是全屏选速刷新了 document-start 脚本，退出时只通知现有页面而未更新缓存的启动状态。现在全屏变化同步更新启动脚本，每页加载完成后同步原生实际全屏状态；实站逐状态同时断言 DOM、布局标记与启动标记一致。
+
+前一候选证据保留：device-1.2.8-fullscreen-navigation-final.txt、final-320.txt、player-course-release.txt（7 状态）、player-boundaries-release.txt（3 状态）、player-single-release.txt（2 状态）、final-93-regression.txt（92/93）及 fullscreen-back-failure.png；拉取旧包为 device-1.2.8-tested-installed.apk，不作为最终交付。
+
+旧候选 DC6E636D7B4C813A2E704700243807DF2FB2D974FD95DD9E6BEEBBD58CBAF200 已被上述实站问题淘汰。其分集 11 项、320px 的 13 项及实站课程 7 状态虽通过，不作为最终候选验收。保留 device-1.2.8-details-final.txt、player-320.txt、player-course-final.txt 和 player-boundaries-final.txt。首轮 30 项 25 通过：三个断言仍测量已隐藏行/按钮，另两个标题断言遇到新「合集」标识；已校正可见性检查并保持 h2 只包含标题。第一次完整 92 项 91 通过：连续更换夹具文档时 evaluateJavascript 回调丢失，已使用测试专用 load 提交通知修复；保留首轮日志，不把失败轮次当作整组通过。
+
+# 2026-10-10 1.2.7 全界面真机适配检查点（历史）
 
 当前需求：修复「我的」中历史记录、我的收藏、稍后再看及动态界面；检查所有现有页面与功能，优化发现的问题，全部验证后更新 GitHub 和 Release。用户明确要求使用已连接的手机。
 

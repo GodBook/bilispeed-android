@@ -17,6 +17,7 @@ import static org.junit.Assert.*;
 public class VideoDetailsInstrumentationTest {
     private final Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
     private MainActivity activity;
+    private int fixtureSequence;
     private static final String VIDEO = "https://www.bilibili.com/video/BV17x411w7KC/";
     private static final String DATA = "{bvid:'BV17x411w7KC',aid:170001,pages:[{page:1,part:'第一集',duration:199},{page:2,part:'第二集',duration:205}]}";
 
@@ -26,6 +27,12 @@ public class VideoDetailsInstrumentationTest {
         target.getSharedPreferences("updates", Context.MODE_PRIVATE).edit().putBoolean("automatic", false).commit();
         activity = (MainActivity) instrumentation.startActivitySync(new Intent(target, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        String width = InstrumentationRegistry.getArguments().getString("layoutWidth");
+        if (width != null) instrumentation.runOnMainSync(() -> {
+            android.view.ViewGroup.LayoutParams params = activity.browserForTesting().getLayoutParams();
+            params.width = Math.round(Integer.parseInt(width) * activity.getResources().getDisplayMetrics().density);
+            activity.browserForTesting().setLayoutParams(params);
+        });
     }
     @After public void finish() {
         if (activity != null) instrumentation.runOnMainSync(activity::finish);
@@ -47,7 +54,10 @@ public class VideoDetailsInstrumentationTest {
         fail("Condition timed out: " + condition);
     }
     private void fixture(String script, String query) throws Exception {
-        String html = "<!doctype html><meta name='viewport' content='width=1100'><script>" + script + "</script>"
+        int sequence = ++fixtureSequence;
+        CountDownLatch committed = new CountDownLatch(1);
+        Object loaded = new Object() { @android.webkit.JavascriptInterface public void ready() { committed.countDown(); } };
+        String html = "<!doctype html><meta name='viewport' content='width=1100'><script>window.detailsFixture=" + sequence + ";" + script + "</script>"
                 + (script.contains("window.slowOfficialBootstrap=true") ? "<script type='application/json' src='https://s1.hdslb.com/bfs/static/jinkela/video/video.fixture.js'></script>" : "")
                 + "<style>body{min-width:1100px}#mirror-vdcon{display:flex;width:1100px}.left-container{width:750px}.right-container{width:350px}"
                 + ".video-pod-above-modules{width:350px;height:320px}#playerWrap{height:400px}</style>"
@@ -55,12 +65,18 @@ public class VideoDetailsInstrumentationTest {
                 + "<div id='mirror-vdcon'><div class='left-container'><div id='playerWrap'><div id='bilibili-player'><video></video></div></div>"
                 + "<div class='video-info-container'><h1>测试视频</h1></div><div class='video-toolbar-container'><button id='like' onclick='window.liked=true'>点赞</button></div>"
                 + "<div class='video-desc-container' id='v_desc'>完整视频简介</div><div id='commentapp'>评论</div></div>"
-                + "<div class='right-container'><div class='video-pod-above-modules'>旧分集占位</div></div></div></div>";
+                + "<div class='right-container'><div class='video-pod-above-modules'>旧分集占位</div></div></div></div>"
+                + "<script>addEventListener('load',()=>VideoFixtureLoaded.ready())</script>";
         instrumentation.runOnMainSync(() -> {
+            activity.browserForTesting().addJavascriptInterface(loaded, "VideoFixtureLoaded");
             activity.browserForTesting().stopLoading();
             activity.browserForTesting().loadDataWithBaseURL(VIDEO + query, html, "text/html", "UTF-8", null);
         });
-        await("window.__BiliTouchVideo");
+        try { assertTrue("Fixture document did not commit", committed.await(15, TimeUnit.SECONDS)); }
+        finally { instrumentation.runOnMainSync(() -> activity.browserForTesting().removeJavascriptInterface("VideoFixtureLoaded")); }
+        await("window.detailsFixture===" + sequence + "&&window.__BiliTouchVideo");
+        String width = InstrumentationRegistry.getArguments().getString("layoutWidth");
+        if (width != null) assertEquals(Integer.parseInt(width), ((Number) js("innerWidth")).doubleValue(), 1);
     }
 
     @Test public void multiplePartsAreReadableTouchableAndUseOfficialPartUrls() throws Exception {
@@ -85,6 +101,70 @@ public class VideoDetailsInstrumentationTest {
         assertEquals("https://www.bilibili.com/video/BV1xx411c7mD/", js("document.querySelectorAll('#bilispeed-episodes a')[1].href"));
         assertEquals("18:23", js("document.querySelector('#bilispeed-episodes time').textContent"));
         assertEquals(1, ((Number) js("document.querySelectorAll('#bilispeed-episodes a[aria-current]').length")).intValue());
+    }
+
+    @Test public void longMultipartCollectionKeepsBothSelectionsAndMakesEveryPartReachable() throws Exception {
+        fixture("window.__INITIAL_STATE__={videoData:{bvid:'BV17x411w7KC',aid:170001,"
+                + "pages:Array.from({length:73},function(_,i){return {page:i+1,part:'第 '+(i+1)+' 集：这是需要在手机上换行显示的完整课程标题',duration:967};}),"
+                + "ugc_season:{title:'Kira老师零基础系列',sections:[{episodes:["
+                + "{bvid:'BV1xx411c7mD',title:'线性代数',arc:{duration:93180}},"
+                + "{bvid:'BV17x411w7KC',title:'概率论与数理统计',arc:{duration:93480}}]}]}}};", "?p=73");
+        await("document.querySelectorAll('#bilispeed-episodes a').length===75");
+        assertEquals("73 / 73", js("document.querySelector('[data-episode-kind=parts] .episode-count').textContent"));
+        assertEquals("2 / 2", js("document.querySelector('[data-episode-kind=collection] .episode-count').textContent"));
+        assertEquals("25:58:00", js("document.querySelector('[data-episode-kind=collection] a[aria-current] time').textContent"));
+        assertEquals(2, ((Number) js("document.querySelectorAll('#bilispeed-episodes a[aria-current]').length")).intValue());
+        assertTrue((Boolean) js("document.querySelector('[data-episode-kind=parts] a[aria-current]').checkVisibility()"));
+        assertEquals(5, ((Number) js("Array.from(document.querySelectorAll('[data-episode-kind=parts] a')).filter(a=>!a.hidden).length")).intValue());
+        assertTrue((Boolean) js("document.querySelector('[data-episode-kind=parts] a:not([hidden]) .episode-title').getBoundingClientRect().height>22"));
+        assertTrue((Boolean) js("Array.from(document.querySelectorAll('#bilispeed-episodes a:not([hidden])')).every(a=>{var r=a.getBoundingClientRect();return r.height>=48&&r.left>=0&&r.right<=innerWidth;})"));
+        assertTrue((Boolean) js("document.querySelector('[data-episode-kind=collection]').getBoundingClientRect().top"
+                + "-document.querySelector('[data-episode-kind=parts]').getBoundingClientRect().bottom>=12"));
+        js("document.querySelector('[data-episode-toggle]').click();true");
+        assertEquals("true", js("document.querySelector('[data-episode-toggle]').getAttribute('aria-expanded')"));
+        assertEquals(73, ((Number) js("Array.from(document.querySelectorAll('[data-episode-kind=parts] a')).filter(a=>!a.hidden).length")).intValue());
+        assertTrue((Boolean) js("document.querySelector('.episode-list').scrollTop>0"));
+        js("document.querySelector('.episode-list').scrollTop=0;document.querySelector('.episode-actions button:nth-child(2)').click();true");
+        assertTrue((Boolean) js("document.querySelector('.episode-list').scrollTop>0"));
+        assertEquals("https://www.bilibili.com/video/BV17x411w7KC/?p=73", js("document.querySelector('[data-episode-kind=parts] a:last-child').href"));
+        js("document.querySelector('[data-episode-toggle]').click();true");
+        assertTrue((Boolean) js("document.querySelector('[data-episode-kind=parts] a[aria-current]').checkVisibility()"));
+        assertEquals("https://www.bilibili.com/video/BV17x411w7KC/?p=72", js("window.__BiliTouchVideo.getNavigation().previous.url"));
+        assertTrue((Boolean) js("window.__BiliTouchVideo.getNavigation().next===null"));
+        js("window.__BiliTouchPlayer.setAppearance({size:150,opacity:100});true");
+        assertTrue((Boolean) js("Array.from(document.querySelectorAll('#bilispeed-touch-controls>button:not([hidden])')).every(b=>{var r=b.getBoundingClientRect();return r.width>=44&&r.height>=44&&r.left>=0&&r.right<=innerWidth;})"));
+    }
+
+    @Test public void adjacentControlsPreferPartsThenContinueAcrossCollectionSections() throws Exception {
+        fixture("window.__INITIAL_STATE__={videoData:{bvid:'BV17x411w7KC',aid:170001,"
+                + "pages:[{page:1,part:'第一集'},{page:2,part:'第二集'}],"
+                + "ugc_season:{title:'课程合集',sections:[{title:'第一章',episodes:["
+                + "{bvid:'BV1xx411c7mD',title:'上个视频'},{bvid:'BV17x411w7KC',title:'当前视频'}]},"
+                + "{title:'第二章',episodes:[{bvid:'BV12gpt6UER4',title:'下个视频'}]}]}}};", "");
+        await("document.querySelector('[data-bilispeed-control=next][data-episode-url]')");
+        assertEquals("https://www.bilibili.com/video/BV1xx411c7mD/", js("window.__BiliTouchVideo.getNavigation().previous.url"));
+        assertEquals("https://www.bilibili.com/video/BV17x411w7KC/?p=2", js("window.__BiliTouchVideo.getNavigation().next.url"));
+        js("history.replaceState({},'', '?p=2');window.__BiliTouch.refresh();true");
+        assertEquals("https://www.bilibili.com/video/BV17x411w7KC/", js("window.__BiliTouchVideo.getNavigation().previous.url"));
+        assertEquals("https://www.bilibili.com/video/BV12gpt6UER4/", js("window.__BiliTouchVideo.getNavigation().next.url"));
+        assertEquals("2 / 2", js("document.querySelector('[data-episode-kind=collection] .episode-count').textContent"));
+        js("history.replaceState({},'', '/video/BV1xx411c7mD/');true");
+        assertTrue((Boolean) js("window.__BiliTouchVideo.getNavigation().next===null"));
+        js("window.fetch=function(){return new Promise(function(){});};window.__BiliTouch.refresh();true");
+        assertTrue((Boolean) js("document.querySelector('[data-bilispeed-control=next]').hidden&&document.querySelector('[data-bilispeed-control=previous]').hidden"));
+    }
+
+    @Test public void firstAndLastPartDisableMissingNeighborsAndSingleVideoHidesNavigation() throws Exception {
+        fixture("window.__INITIAL_STATE__={videoData:" + DATA + "};", "");
+        await("document.querySelector('[data-bilispeed-control=next][data-episode-url]')");
+        assertTrue((Boolean) js("document.querySelector('[data-bilispeed-control=previous]').disabled"));
+        assertFalse((Boolean) js("document.querySelector('[data-bilispeed-control=next]').disabled"));
+        js("history.replaceState({},'', '?p=2');window.__BiliTouch.refresh();true");
+        assertFalse((Boolean) js("document.querySelector('[data-bilispeed-control=previous]').disabled"));
+        assertTrue((Boolean) js("document.querySelector('[data-bilispeed-control=next]').disabled"));
+        fixture("window.__INITIAL_STATE__={videoData:{bvid:'BV17x411w7KC',aid:170001,pages:[{page:1}]}};", "");
+        await("document.querySelector('[data-bilispeed-control=speed]')");
+        assertTrue((Boolean) js("document.querySelector('[data-bilispeed-control=next]').hidden&&document.querySelector('[data-bilispeed-control=previous]').hidden"));
     }
 
     @Test public void apiFailureShowsRetryAndLateMetadataRestoresParts() throws Exception {

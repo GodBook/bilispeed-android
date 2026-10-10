@@ -210,6 +210,7 @@ public class OfficialBilibiliSmokeTest {
             System.out.println("BILISPEED_LIVE_COLLECTION=" + js("JSON.stringify({count:document.querySelectorAll('#bilispeed-episodes a').length,current:document.querySelector('#bilispeed-episodes [aria-current]').href})"));
             js("document.querySelector('#bilispeed-episodes').scrollIntoView({block:'center'});true");
             screenshot("BiliSpeed-collection-fixed");
+            tapElement("#bilispeed-episodes [data-episode-toggle]");
             tapElement("#bilispeed-episodes a:first-child");
             await("location.pathname.includes('BV1xXtTeZEVR') && window.__INITIAL_STATE__ && window.__INITIAL_STATE__.cid===25861685381", 35);
             await("document.querySelector('#bilispeed-episodes [aria-current]') && document.querySelector('#bilispeed-episodes [aria-current]').href.includes('BV1xXtTeZEVR')", 20);
