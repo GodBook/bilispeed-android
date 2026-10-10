@@ -12,7 +12,11 @@
 
 首轮 3 项中 1 项通过，两个退出断言错误地假定未锁定方向的手机一定回到竖屏；全屏状态和系统栏实际已正常恢复。已让播放器夹具明确从竖屏开始，之后 22 项全部通过，未降低退出断言。首次构建被 Windows 闲置 Gradle daemon 占用 classes.dex 阻止，停止 daemon 后构建与 lint 通过；首轮日志保留。
 
-原偏好已恢复并自动删除快照（restored-final.txt）；检查会话已结束、调试已关闭、tcp9222 已移除。screen_off_timeout 恢复 600000，accelerometer_rotation 恢复 1、user_rotation 恢复 0；未修改 Wi-Fi。正式 Release 与正式包安装的校验结果在发布后追加。
+原偏好已恢复并自动删除快照（restored-final.txt）；检查会话已结束、调试已关闭、tcp9222 已移除。screen_off_timeout 恢复 600000，accelerometer_rotation 恢复 1、user_rotation 恢复 0；未修改 Wi-Fi。
+
+发布完成：[v1.2.9](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.9)，源码/标签 0c8361c10b79aec610edf02e919f3492522fdf7d。正式包 1814646 字节 / SHA-256 9F3AF90F67483FB7DFFCFC6F7F2F5AC8387096D0D53F793F2149B0FEAF476FE7；与实测包比较 76 个 ZIP 条目，只有 Git 版本记录不同。三个 GitHub 附件摘要、三个匿名公开下载、latest/update.json 全部核对一致。公开下载的正式 APK 已覆盖安装手机并拉取 installed.apk 核对同一哈希，保存在 artifacts/published-1.2.9。
+
+收尾完成：测试 runner 已卸载，正式包无 DEBUGGABLE，当前应用调试 socket 与本任务转发均为 0；原生设置确认原倍速 1x 已选中，截图 device-1.2.9-published-settings.png。临时安装副本归档到项目 artifacts，未删除主应用数据。最终验收记录另外提交到 main，不移动发布标签。
 
 # 2026-10-10 1.2.8 分集与播放栏检查点
 

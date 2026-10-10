@@ -20,7 +20,13 @@ B站换文档会结束 HTML Fullscreen API。因此切集后 document.fullscreen
 
 过程记录：首次构建遇到 Windows 闲置 Gradle daemon 占用 classes.dex，停止 daemon 后重建成功。初次三个专项中两个退出断言失败：当时夹具未锁定起始方向，自动旋转手机在退出后按物理方向保持横屏，但全屏标记与系统栏已正确恢复。将播放器夹具明确从竖屏开始后，22 项全部通过，退出断言保持不变。失败日志保留在 build-save.txt 与 targeted.txt，不计为通过。
 
-本次重点为播放下栏和手动切集；实体设备为 Android 15，未声称在实体 Android 16 上测试。发布后的正式包、公开更新渠道及手机最终安装校验另行追加。
+本次重点为播放下栏和手动切集；实体设备为 Android 15，未声称在实体 Android 16 上测试。
+
+正式发布：[v1.2.9](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.9)，源码与标签为 0c8361c10b79aec610edf02e919f3492522fdf7d。提交后由相同生产源码重建，正式 APK 为 1814646 字节 / SHA-256 9F3AF90F67483FB7DFFCFC6F7F2F5AC8387096D0D53F793F2149B0FEAF476FE7。76 个 ZIP 条目只有 META-INF/version-control-info.textproto 与实测候选不同，该记录指向上述发布提交；见 release-build.txt、release-zip-diff.txt、release-vcs.txt（均带 device-1.2.9- 前缀）。
+
+GitHub latest 已指向正式 v1.2.9，三个附件的 GitHub SHA-256 摘要与本机一致；从公开地址匿名下载 APK、update.json、SHA256SUMS.txt 后逐字节哈希核对一致，匿名 latest/download/update.json 的版本、URL 和哈希一致。记录 device-1.2.9-public-verification.txt；公开下载保存在 artifacts/published-1.2.9。签名证书 SHA-256 沿用 E2D8ED51E71288C8F2A0EA81E3F7AC23ABA499D59ED6D7EACE205E78960F94B3。
+
+公开下载的正式 APK 已覆盖安装到该手机，重新拉取 installed.apk 与 Release 哈希一致。测试 runner 已卸载，正式包无 DEBUGGABLE，当前应用 WebView 调试 socket=0、任务 tcp9222 转发=0；原休眠和旋转设置均恢复。正式版原生设置中 1x 仍选中，手机停留在设置页，证据 device-1.2.9-published-settings.xml/png、published-install.txt、final-cleanup.txt。在线更新渠道的匿名下载校验在电脑完成，没有将其称为手机内完整下载安装流程。
 
 ## 1.2.8：分集显示、上一集/下一集与播放栏倍速
 
