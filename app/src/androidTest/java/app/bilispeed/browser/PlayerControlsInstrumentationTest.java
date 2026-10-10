@@ -40,6 +40,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.*;
 
@@ -70,6 +71,7 @@ public class PlayerControlsInstrumentationTest {
         }
         activity = (MainActivity) instrumentation.startActivitySync(new Intent(context, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        instrumentation.runOnMainSync(() -> activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));
         String width = InstrumentationRegistry.getArguments().getString("layoutWidth");
         if (width != null) instrumentation.runOnMainSync(() -> {
             android.view.ViewGroup.LayoutParams params = activity.browserForTesting().getLayoutParams();
@@ -98,6 +100,7 @@ public class PlayerControlsInstrumentationTest {
             activity.browserForTesting().loadDataWithBaseURL("https://www.bilibili.com/video/__bilispeed_controls__/", html, "text/html", "UTF-8", null);
         });
         await("window.playerFixture && window.__BiliTouchPlayer && document.getElementById('v').readyState>=2 && " + CONTROLS);
+        await("innerHeight>innerWidth");
         if (width != null) assertEquals(Integer.parseInt(width), ((Number) js("innerWidth")).doubleValue(), 1);
         js("window.v=document.getElementById('v');v.pause();v.currentTime=1;true");
         await("!v.seeking && v.currentTime>0.9");
@@ -182,6 +185,12 @@ public class PlayerControlsInstrumentationTest {
     }
 
     private void tap(String selector) throws Exception {
+        if (selector.equals("[data-bilispeed-control=volume]") || selector.equals("[data-bilispeed-control=subtitles]")) {
+            if (Boolean.TRUE.equals(js("document.querySelector('" + selector + "').hidden"))) {
+                tap("[data-bilispeed-control=more]");
+                selector = selector.replace("=", "=more-");
+            }
+        }
         instrumentation.runOnMainSync(() -> {
             if (!activity.fullscreenForTesting()) activity.browserForTesting().requestFocus();
         });
@@ -451,35 +460,71 @@ public class PlayerControlsInstrumentationTest {
         screenshot("BiliSpeed-1.2.8-fullscreen-speed");
     }
 
-    @Test public void fullscreenRateThenNextEpisodeDoesNotLeakFullscreenIntoTheNewDocument() throws Exception {
+    private AtomicInteger serveEpisodeDocuments(String metadata) {
+        AtomicInteger loaded = new AtomicInteger();
+        Object signal = new Object() { @android.webkit.JavascriptInterface public void ready() { loaded.incrementAndGet(); } };
+        instrumentation.runOnMainSync(() -> {
+            WebView view = activity.browserForTesting();
+            WebViewClient original = view.getWebViewClient();
+            view.addJavascriptInterface(signal, "NextEpisodeFixtureLoaded");
+            view.setWebViewClient(new WebViewClient() {
+                @Override public WebResourceResponse shouldInterceptRequest(WebView owner, WebResourceRequest request) {
+                    if (!request.isForMainFrame()) return null;
+                    String html = fixtureHtml + "<script>window.nextEpisodeFixture=true;" + metadata
+                            + "window.__INITIAL_STATE__.videoData.bvid=location.pathname.split('/')[2];"
+                            + "addEventListener('load',()=>NextEpisodeFixtureLoaded.ready());</script>";
+                    return new WebResourceResponse("text/html", "UTF-8", new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8)));
+                }
+                @Override public void onPageStarted(WebView owner, String url, Bitmap favicon) { original.onPageStarted(owner, url, favicon); }
+                @Override public void onPageFinished(WebView owner, String url) { original.onPageFinished(owner, url); }
+            });
+        });
+        return loaded;
+    }
+
+    private void changeFixtureEpisode(String direction, AtomicInteger loads) throws Exception {
+        int before = loads.get();
+        tap("[data-bilispeed-control=" + direction + "]");
+        long deadline = SystemClock.elapsedRealtime() + 15000;
+        while (loads.get() == before && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(100);
+        assertTrue("Next episode document did not commit", loads.get() > before);
+        await("window.nextEpisodeFixture&&document.querySelector('video').readyState>=2&&" + CONTROLS);
+    }
+
+    private void assertImmersiveEpisode() throws Exception {
+        await("window.__BILI_TOUCH_FULLSCREEN__&&document.documentElement.hasAttribute('data-bilispeed-fullscreen')&&innerWidth>innerHeight");
+        instrumentation.runOnMainSync(() -> {
+            assertTrue(activity.fullscreenForTesting());
+            assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, activity.getRequestedOrientation());
+            assertEquals(0, ((android.widget.FrameLayout.LayoutParams) activity.browserForTesting().getLayoutParams()).bottomMargin);
+        });
+        assertTrue((Boolean) js("(()=>{var r=document.querySelector('" + HOST + "').getBoundingClientRect();"
+                + "return Math.abs(r.x)<2&&Math.abs(r.y)<2&&Math.abs(r.width-innerWidth)<2&&Math.abs(r.height-innerHeight)<2;})()"));
+    }
+
+    @Test public void fullscreenNextAndPreviousKeepLandscapePlaybackAndBackExits() throws Exception {
         String metadata = "window.__INITIAL_STATE__={videoData:{bvid:'BV17x411w7KC',aid:170001,pages:[{page:1,part:'第一集'},{page:2,part:'第二集'}]}};";
         js("history.replaceState({},'', '/video/BV17x411w7KC/');" + metadata + "window.__BiliTouch.refresh();true");
         await("document.querySelector('[data-bilispeed-control=next][data-episode-url]')");
-        CountDownLatch nextReady = new CountDownLatch(1);
-        Object loaded = new Object() { @android.webkit.JavascriptInterface public void ready() { nextReady.countDown(); } };
-        byte[] nextDocument = (fixtureHtml + "<script>window.nextEpisodeFixture=true;" + metadata
-                + "addEventListener('load',()=>NextEpisodeFixtureLoaded.ready());</script>").getBytes(StandardCharsets.UTF_8);
-        instrumentation.runOnMainSync(() -> {
-            activity.browserForTesting().addJavascriptInterface(loaded, "NextEpisodeFixtureLoaded");
-            activity.browserForTesting().setWebViewClient(new WebViewClient() {
-            @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                if (request.isForMainFrame() && "/video/BV17x411w7KC/".equals(request.getUrl().getPath()))
-                    return new WebResourceResponse("text/html", "UTF-8", new ByteArrayInputStream(nextDocument));
-                return null;
-            }
-            });
-        });
+        AtomicInteger loads = serveEpisodeDocuments(metadata);
         tap("[data-bilispeed-control=fullscreen]");
         await("document.fullscreenElement&&innerWidth>innerHeight&&" + CONTROLS + ".dataset.hidden==='true'");
         dismissImmersiveHint(instrumentation); SystemClock.sleep(400);
         tap(HOST); await(CONTROLS + ".dataset.hidden==='false'");
         tap("[data-bilispeed-control=speed]"); tap("[data-rate=\"2\"]");
         await("v.playbackRate===2");
-        click("close-panel"); tap("[data-bilispeed-control=next]");
-        try { assertTrue("Next episode document did not commit", nextReady.await(15, TimeUnit.SECONDS)); }
-        finally { instrumentation.runOnMainSync(() -> activity.browserForTesting().removeJavascriptInterface("NextEpisodeFixtureLoaded")); }
-        await("window.nextEpisodeFixture&&location.search==='?p=2'&&document.querySelector('video').readyState>=2&&document.getElementById('bilispeed-touch-controls')");
-        await("!document.documentElement.hasAttribute('data-bilispeed-fullscreen')&&document.querySelector('video').playbackRate===2");
+        click("close-panel"); changeFixtureEpisode("next", loads);
+        assertEquals("?p=2", js("location.search"));
+        assertImmersiveEpisode();
+        await("document.querySelector('video').playbackRate===2");
+        tap(HOST); await(CONTROLS + ".dataset.hidden==='false'");
+        tap("[data-bilispeed-control=play]"); await("!document.querySelector('video').paused");
+        screenshot("BiliSpeed-1.2.9-fullscreen-next");
+        changeFixtureEpisode("previous", loads);
+        assertImmersiveEpisode();
+        tap(HOST); await(CONTROLS + ".dataset.hidden==='false'");
+        instrumentation.runOnMainSync(activity::onBackPressed);
+        await("!document.documentElement.hasAttribute('data-bilispeed-fullscreen')&&innerHeight>innerWidth");
         assertFalse((Boolean) js("window.__BILI_TOUCH_FULLSCREEN__||!!document.fullscreenElement"));
         instrumentation.runOnMainSync(() -> assertFalse(activity.fullscreenForTesting()));
         // A queued speed configuration from the previous fullscreen page must
@@ -493,6 +538,45 @@ public class PlayerControlsInstrumentationTest {
                 + "window.v=document.querySelector('video');window.__BiliTouch.refresh();true");
         assertEquals("relative", js("getComputedStyle(document.querySelector('.bpx-player-container')).position"));
         assertContained();
+    }
+
+    @Test public void fullscreenCollectionNavigationKeepsPresentationAndExitButtonRestoresPage() throws Exception {
+        String metadata = "window.__INITIAL_STATE__={videoData:{bvid:'BV17x411w7KC',aid:170001,pages:[{page:1}],"
+                + "ugc_season:{title:'合集',sections:[{episodes:[{bvid:'BV17x411w7KC',title:'第一集'},{bvid:'BV1xx411c7mD',title:'第二集'}]}]}}};";
+        js("history.replaceState({},'', '/video/BV17x411w7KC/');" + metadata + "window.__BiliTouch.refresh();true");
+        await("document.querySelector('[data-bilispeed-control=next][data-episode-url]')");
+        AtomicInteger loads = serveEpisodeDocuments(metadata);
+        tap("[data-bilispeed-control=fullscreen]");
+        await("document.fullscreenElement&&innerWidth>innerHeight");
+        dismissImmersiveHint(instrumentation); SystemClock.sleep(400);
+        tap(HOST); await(CONTROLS + ".dataset.hidden==='false'");
+        changeFixtureEpisode("next", loads);
+        assertEquals("/video/BV1xx411c7mD/", js("location.pathname"));
+        assertImmersiveEpisode();
+        tap(HOST); await(CONTROLS + ".dataset.hidden==='false'");
+        changeFixtureEpisode("previous", loads); assertImmersiveEpisode();
+        tap(HOST); await(CONTROLS + ".dataset.hidden==='false'");
+        tap("[data-bilispeed-control=fullscreen]");
+        await("!window.__BILI_TOUCH_FULLSCREEN__&&!document.documentElement.hasAttribute('data-bilispeed-fullscreen')&&innerHeight>innerWidth");
+        instrumentation.runOnMainSync(() -> assertFalse(activity.fullscreenForTesting()));
+        assertContained();
+    }
+
+    @Test public void compactEpisodeControlsStayOnOneRowAndMoreOpensVolumeAndSubtitles() throws Exception {
+        js("history.replaceState({},'', '/video/BV17x411w7KC/');window.__INITIAL_STATE__={videoData:{bvid:'BV17x411w7KC',aid:170001,"
+                + "pages:[{page:1,part:'第一集'},{page:2,part:'第二集'}]}};window.__BiliTouch.refresh();true");
+        await("document.querySelector('[data-bilispeed-control=next][data-episode-url]')");
+        assertContained();
+        assertTrue((Boolean) js("(()=>{var buttons=Array.from(document.querySelectorAll('#bilispeed-touch-controls>button:not([hidden])'));"
+                + "var y=buttons[0].getBoundingClientRect().y;return buttons.every(b=>Math.abs(b.getBoundingClientRect().y-y)<1);})()"));
+        if (Boolean.TRUE.equals(js("innerWidth<=560"))) {
+            tap("[data-bilispeed-control=volume]");
+            await("document.querySelector('[data-bilispeed-control=volume-slider]').checkVisibility()");
+            tap("[data-bilispeed-control=close-panel]");
+            tap("[data-bilispeed-control=subtitles]");
+            await("document.getElementById('bilispeed-player-panel').textContent.includes('暂无可用字幕')");
+        }
+        screenshot("BiliSpeed-1.2.9-single-row-controls");
     }
 
     @Test public void subtitleLanguagesAndOffOperateRealTextTracks() throws Exception {

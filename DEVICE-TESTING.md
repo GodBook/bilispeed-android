@@ -1,3 +1,19 @@
+# 2026-10-10 1.2.9 单行控制栏与全屏切集检查点
+
+需求：播放下栏按钮统一为一行；全屏点击下一集继续保持全屏；使用电脑连接的手机测试，完成后同步 GitHub 与正式 Release。
+
+工作位置：main，起点 8aefb2e / 1.2.8，开始时工作区干净。设备为 10.93.192.96:5555 / 小米 9 SE / Android 15 API 35 / WebView 153，保留原签名、Cookies 和原偏好快照。
+
+实现：竖屏上一集、下一集改为图标，音量与字幕从更多面板打开，按钮保留 44px 点击区域；320px 下隐藏可视总时长但保留完整无障碍说明。切集通过受限主框架消息交给 Android，在新文档加载期间保留横屏、沉浸显示和导航隐藏，新播放器铺满 WebView。退出按钮与系统返回恢复原先方向；非目标视频导航和加载错误清理全屏。
+
+当前验证：播放器 22 项通过（119.327 秒，artifacts/device-1.2.9-player-regression.txt）；其余 73 项通过（253.409 秒，browser-regression.txt）；同机实际 320px 的 14 项通过（37.542 秒，320.txt）。95 项回归按 22 + 73 分组运行，没有重复计数。实站 21 状态通过：live-course.txt（11）、live-collection.txt（5）、live-boundaries.txt（3）、live-single.txt（2）。所有日志前缀为 artifacts/device-1.2.9-，JSON 与原生截图同前缀。
+
+实测 APK 1814646 字节 / SHA-256 7E4B700EFFCA0795AE77F610AAFEA23DEB9F1F59CEB3A916BBDED7924AA028E5，已拉取手机安装包核对一致；存于 artifacts/tested-1.2.9。生产文件指纹 device-1.2.9-source-sha256.json，在实站检查和设置恢复后核对未变。
+
+首轮 3 项中 1 项通过，两个退出断言错误地假定未锁定方向的手机一定回到竖屏；全屏状态和系统栏实际已正常恢复。已让播放器夹具明确从竖屏开始，之后 22 项全部通过，未降低退出断言。首次构建被 Windows 闲置 Gradle daemon 占用 classes.dex 阻止，停止 daemon 后构建与 lint 通过；首轮日志保留。
+
+原偏好已恢复并自动删除快照（restored-final.txt）；检查会话已结束、调试已关闭、tcp9222 已移除。screen_off_timeout 恢复 600000，accelerometer_rotation 恢复 1、user_rotation 恢复 0；未修改 Wi-Fi。正式 Release 与正式包安装的校验结果在发布后追加。
+
 # 2026-10-10 1.2.8 分集与播放栏检查点
 
 当前需求：修复截图中的分集显示，在播放控制栏添加上一集、下一集与倍速按钮；在电脑连接的手机测试通过后更新 GitHub 与 Release。

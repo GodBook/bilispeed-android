@@ -114,6 +114,8 @@ public class MainActivity extends Activity {
     private Dialog appearanceDialog;
     private View fullscreenView;
     private WebChromeClient.CustomViewCallback fullscreenCallback;
+    private boolean episodeFullscreen;
+    private String fullscreenEpisodeUrl;
     private ValueCallback<Uri[]> uploadCallback;
     private ScriptHandler documentScript;
     private String documentState;
@@ -282,7 +284,7 @@ public class MainActivity extends Activity {
             tab.setContentDescription("B站" + labels[index]);
             tab.setOnClickListener(view -> {
                 hideInputKeyboard(browser);
-                if (fullscreenView != null) exitFullscreen();
+                if (isFullscreenActive()) exitFullscreen();
                 if (item == 5) { showSettings(); return; }
                 closeSettings();
                 switch (item) {
@@ -409,6 +411,24 @@ public class MainActivity extends Activity {
                     String payload = message.getData();
                     if (payload == null || payload.length() > 2048) return;
                     JSONObject data = new JSONObject(payload);
+                    if ("change-episode".equals(data.optString("type"))) {
+                        if (foreground && isMainFrame && touchLayout && isFullscreenActive()) {
+                            String url = data.optString("url");
+                            if (isEpisodeUrl(url)) {
+                                // A document's Fullscreen API ends on navigation. Keep
+                                // Android immersive mode and the orientation instead.
+                                episodeFullscreen = true;
+                                fullscreenEpisodeUrl = url;
+                                hideCustomFullscreen();
+                                browser.loadUrl(url);
+                            }
+                        }
+                        return;
+                    }
+                    if ("exit-fullscreen".equals(data.optString("type"))) {
+                        if (foreground && isMainFrame) exitFullscreen();
+                        return;
+                    }
                     if ("select-rate".equals(data.optString("type"))) {
                         // The touch player's speed picker shares the native
                         // preference and controller, including in fullscreen.
@@ -470,6 +490,7 @@ public class MainActivity extends Activity {
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 pageGeneration++;
                 if (destroyed || view != browser) return;
+                if (episodeFullscreen && !sameEpisode(url, fullscreenEpisodeUrl)) exitFullscreen();
                 String mapped = desktopUrl(url);
                 if (!mapped.equals(url)) { view.stopLoading(); view.loadUrl(mapped); return; }
                 view.getSettings().setMediaPlaybackRequiresUserGesture(!isBiliHttps(url));
@@ -522,7 +543,7 @@ public class MainActivity extends Activity {
                 if (destroyed || owner != browser) { callback.onCustomViewHidden(); return; }
                 enterFullscreen(view, callback);
             }
-            @Override public void onHideCustomView() { if (!destroyed && owner == browser) exitFullscreen(); }
+            @Override public void onHideCustomView() { if (!destroyed && owner == browser) hideCustomFullscreen(); }
             @Override public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, android.os.Message resultMsg) {
                 if (destroyed || view != browser || !isUserGesture) return false;
                 // A short-lived WebView resolves target=_blank without allowing app popups.
@@ -628,7 +649,7 @@ public class MainActivity extends Activity {
     private String controllerInitialState() {
         return "window.__BILI_SPEED_INITIAL__=" + selectedRate + ";window.__BILI_SPEED_SUSPENDED__="
                 + !foreground + ";window.__BILI_TOUCH_ENABLED__=" + touchLayout
-                + ";window.__BILI_TOUCH_FULLSCREEN__=" + (fullscreenView != null)
+                + ";window.__BILI_TOUCH_FULLSCREEN__=" + isFullscreenActive()
                 + ";window.__BILI_BUTTON_APPEARANCE__=" + subtitleAppearance() + ";\n";
     }
 
@@ -721,7 +742,7 @@ public class MainActivity extends Activity {
     private boolean settingsShown() { return settingsPanel != null && settingsPanel.getVisibility() == View.VISIBLE; }
 
     void showSettings() {
-        if (fullscreenView != null) exitFullscreen();
+        if (isFullscreenActive()) exitFullscreen();
         if (settingsPanel == null) {
             settingsPanel = new SettingsPanel(this, new SettingsPanel.Listener() {
                 @Override public void onRate(float rate) { selectRate(rate); }
@@ -1178,6 +1199,23 @@ public class MainActivity extends Activity {
         return null;
     }
 
+    private static boolean isEpisodeUrl(String url) {
+        if (!isBiliHttps(url)) return false;
+        Uri uri = Uri.parse(url);
+        return ("www.bilibili.com".equals(uri.getHost()) || "bilibili.com".equals(uri.getHost()))
+                && uri.getPath() != null && uri.getPath().matches("/video/(?:BV[0-9A-Za-z]{10}|av[0-9]+)/?");
+    }
+
+    private static boolean sameEpisode(String url, String expected) {
+        if (!isEpisodeUrl(url) || !isEpisodeUrl(expected)) return false;
+        Uri actual = Uri.parse(url), target = Uri.parse(expected);
+        String actualPart = actual.getQueryParameter("p"), targetPart = target.getQueryParameter("p");
+        if (actualPart == null) actualPart = "1";
+        if (targetPart == null) targetPart = "1";
+        return actual.getPath().replaceAll("/$", "").equals(target.getPath().replaceAll("/$", ""))
+                && actualPart.equals(targetPart);
+    }
+
     static String desktopUrl(String url) {
         if (!isHttps(url)) return url;
         Uri uri = Uri.parse(url);
@@ -1241,7 +1279,7 @@ public class MainActivity extends Activity {
 
     private void updateBrowserLayout() {
         // Settings must remain reachable in the original desktop layout too.
-        boolean visible = fullscreenView == null;
+        boolean visible = !isFullscreenActive();
         navigation.setVisibility(visible ? View.VISIBLE : View.GONE);
         int margin = visible ? dp(56) : 0;
         FrameLayout.LayoutParams content = (FrameLayout.LayoutParams) browser.getLayoutParams();
@@ -1363,6 +1401,7 @@ public class MainActivity extends Activity {
     }
 
     private void showPageError(String message) {
+        if (isFullscreenActive()) exitFullscreen();
         failedNavigation = true;
         errorText.setText(message);
         errorPanel.setVisibility(View.VISIBLE);
@@ -1372,10 +1411,10 @@ public class MainActivity extends Activity {
     private void enterFullscreen(View view, WebChromeClient.CustomViewCallback callback) {
         closeSettings();
         if (fullscreenView != null) { callback.onCustomViewHidden(); return; }
+        if (!isFullscreenActive()) previousOrientation = getRequestedOrientation();
         fullscreenView = view;
         fullscreenCallback = callback;
         root.setBackgroundColor(Color.BLACK);
-        previousOrientation = getRequestedOrientation();
         fullscreenHost.addView(view, new FrameLayout.LayoutParams(-1, -1));
         fullscreenHost.setVisibility(View.VISIBLE);
         browser.setVisibility(View.INVISIBLE);
@@ -1386,17 +1425,32 @@ public class MainActivity extends Activity {
         root.post(this::positionFloating);
     }
 
-    private void exitFullscreen() {
-        if (fullscreenView == null) return;
-        fullscreenHost.removeView(fullscreenView);
+    private boolean isFullscreenActive() { return fullscreenView != null || episodeFullscreen; }
+
+    private void removeCustomFullscreenView() {
+        if (fullscreenView != null) fullscreenHost.removeView(fullscreenView);
         fullscreenView = null;
-        root.setBackgroundColor(Color.WHITE);
         fullscreenHost.setVisibility(View.GONE);
         browser.setVisibility(View.VISIBLE);
-        updateBrowserLayout();
         WebChromeClient.CustomViewCallback callback = fullscreenCallback;
         fullscreenCallback = null;
         if (callback != null) callback.onCustomViewHidden();
+    }
+
+    private void hideCustomFullscreen() {
+        if (!episodeFullscreen) { exitFullscreen(); return; }
+        removeCustomFullscreenView();
+        updateBrowserLayout();
+        notifyTouchFullscreen();
+    }
+
+    private void exitFullscreen() {
+        if (!isFullscreenActive()) return;
+        episodeFullscreen = false;
+        fullscreenEpisodeUrl = null;
+        removeCustomFullscreenView();
+        root.setBackgroundColor(Color.WHITE);
+        updateBrowserLayout();
         setSystemBarsFullscreen(false);
         setRequestedOrientation(previousOrientation);
         notifyTouchFullscreen();
@@ -1405,14 +1459,13 @@ public class MainActivity extends Activity {
 
     private void notifyTouchFullscreen() {
         if (destroyed) return;
-        // A speed change in fullscreen refreshes the document-start script.
-        // Reset that cached bootstrap as well when fullscreen ends, so the
-        // next episode cannot inherit the previous document's fullscreen flag.
+        // Keep future documents and the current one in sync with Android's
+        // presentation, including the immersive WebView used between episodes.
         updateDocumentScript();
         if (!isBiliHttps(browser.getUrl())) return;
-        browser.evaluateJavascript("window.__BILI_TOUCH_FULLSCREEN__=" + (fullscreenView != null)
+        browser.evaluateJavascript("window.__BILI_TOUCH_FULLSCREEN__=" + isFullscreenActive()
                 + ";window.__BiliTouchPlayer && window.__BiliTouchPlayer.setFullscreen("
-                + (fullscreenView != null) + ");", null);
+                + isFullscreenActive() + ");", null);
     }
 
     private void setSystemBarsFullscreen(boolean fullscreen) {
@@ -1438,12 +1491,12 @@ public class MainActivity extends Activity {
             - floating.getWidth() - dp(8)); }
     private float maxFloatY() { return Math.max(dp(8), root.getHeight() - root.getPaddingTop() - root.getPaddingBottom()
             - floating.getHeight() - dp(8) - (navigation != null && navigation.getVisibility() == View.VISIBLE ? dp(56) : 0)); }
-    private String positionPrefix() { return fullscreenView != null ? "fullscreen_" : "normal_"; }
+    private String positionPrefix() { return isFullscreenActive() ? "fullscreen_" : "normal_"; }
     private void positionFloating() {
         if (floating == null || root.getWidth() == 0) return;
         String prefix = positionPrefix();
         floating.setTranslationX(dp(8) + preferences.getFloat(prefix + "x", 1) * (maxFloatX() - dp(8)));
-        floating.setTranslationY(dp(8) + preferences.getFloat(prefix + "y", fullscreenView != null ? 0.14f : 0.84f) * (maxFloatY() - dp(8)));
+        floating.setTranslationY(dp(8) + preferences.getFloat(prefix + "y", isFullscreenActive() ? 0.14f : 0.84f) * (maxFloatY() - dp(8)));
     }
     private void saveFloatingPosition() {
         String prefix = positionPrefix();
@@ -1455,7 +1508,7 @@ public class MainActivity extends Activity {
         if (speedDialog != null && speedDialog.isShowing()) speedDialog.dismiss();
         else if (appearanceDialog != null && appearanceDialog.isShowing()) appearanceDialog.dismiss();
         else if (settingsShown()) closeSettings();
-        else if (fullscreenView != null) exitFullscreen();
+        else if (isFullscreenActive()) exitFullscreen();
         else if (MY_PAGE.equals(browser.getUrl())) {
             WebView owner = browser;
             int generation = pageGeneration;
@@ -1556,8 +1609,8 @@ public class MainActivity extends Activity {
     Dialog speedDialogForTesting() { return speedDialog; }
     Dialog appearanceDialogForTesting() { return appearanceDialog; }
     View settingsForTesting() { return settingsPanel; }
-    boolean fullscreenForTesting() { return fullscreenView != null; }
-    View fullscreenViewForTesting() { return fullscreenView; }
+    boolean fullscreenForTesting() { return isFullscreenActive(); }
+    View fullscreenViewForTesting() { return fullscreenView != null ? fullscreenView : episodeFullscreen ? browser : null; }
 
     private TextView text(String value, int size, int color) {
         TextView view = new TextView(this);

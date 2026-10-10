@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 const serial = process.argv[2] || process.env.BILISPEED_TEST_SERIAL;
 if (!serial) throw new Error('Pass the connected phone serial');
 const stage = process.argv[3] || 'course';
-const prefix = process.env.BILISPEED_EVIDENCE_PREFIX || '1.2.8-';
+const prefix = process.env.BILISPEED_EVIDENCE_PREFIX || '1.2.9-';
 if (!/^[A-Za-z0-9.-]+$/.test(prefix)) throw new Error('Invalid evidence prefix');
 const page = await connectDevice();
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -40,10 +40,15 @@ async function point(target, x = .5, y = .5) {
 }
 
 async function tap(target) {
+    if (await page.evaluate(`!!${q(target)}?.closest('#bilispeed-touch-controls')&&document.getElementById('bilispeed-touch-controls').dataset.hidden==='true'`)) {
+        const [x, y] = await point('.bpx-player-video-area', .5, .25);
+        execFileSync('adb', ['-s', serial, 'shell', 'input', 'tap', String(x), String(y)]);
+        await waitFor('document.getElementById("bilispeed-touch-controls").dataset.hidden==="false"');
+    }
     await page.evaluate(`(()=>{
         document.documentElement.style.scrollBehavior='auto';
         const element=${q(target)};
-        if (!document.fullscreenElement && element.closest('#bilispeed-touch-controls'))
+        if (!window.__BILI_TOUCH_FULLSCREEN__ && !document.fullscreenElement && element.closest('#bilispeed-touch-controls'))
             document.getElementById('playerWrap').scrollIntoView({behavior:'instant',block:'start'});
         element.scrollIntoView({behavior:'instant',block:'nearest'});
         return true;
@@ -65,7 +70,9 @@ async function record(name) {
     const result = await page.evaluate(`(()=>{
         const rect = element => {const r=element.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height};};
         return {url:location.href,title:document.title,width:innerWidth,documentWidth:document.documentElement.scrollWidth,
-            fullscreen:!!document.fullscreenElement,fullscreenLayout:document.documentElement.hasAttribute('data-bilispeed-fullscreen'),
+            fullscreen:!!window.__BILI_TOUCH_FULLSCREEN__||!!document.fullscreenElement,domFullscreen:!!document.fullscreenElement,
+            fullscreenLayout:document.documentElement.hasAttribute('data-bilispeed-fullscreen'),
+            player:rect(document.querySelector('.bpx-player-video-area')),height:innerHeight,
             initialFullscreen:window.__BILI_TOUCH_FULLSCREEN__,state:window.__BiliSpeed.snapshot(),
             video:Array.from(document.querySelectorAll('video')).map(v=>({ready:v.readyState,paused:v.paused,time:v.currentTime,rate:v.playbackRate})),
             counts:Array.from(document.querySelectorAll('#bilispeed-episodes .episode-count')).map(e=>e.textContent),
@@ -81,6 +88,12 @@ async function record(name) {
     for (const button of result.controls) {
         assert.ok(button.w >= 44 && button.h >= 44, button.name + ' touch target');
         assert.ok(button.x >= -1 && button.x + button.w <= result.width + 2, button.name + ' outside screen');
+    }
+    assert.ok(result.controls.every(button => Math.abs(button.y - result.controls[0].y) <= 12), 'Controls must stay on one row');
+    if (result.fullscreen) {
+        assert.ok(result.width > result.height, 'Fullscreen must stay landscape');
+        assert.ok(Math.abs(result.player.x) < 2 && Math.abs(result.player.y) < 2
+            && Math.abs(result.player.w - result.width) < 2 && Math.abs(result.player.h - result.height) < 2, 'Player must fill fullscreen');
     }
     console.log(JSON.stringify({ status: 'PASS', name, url: result.url, counts: result.counts, rate: result.state.selected, fullscreen: result.fullscreen }));
 }
@@ -143,8 +156,19 @@ try {
         assert.ok(await page.evaluate('!!document.fullscreenElement&&!document.getElementById("bilispeed-player-panel").hidden&&document.getElementById("bilispeed-touch-controls").dataset.hidden==="false"'));
         await screenshot('course-fullscreen-speed'); await record('fullscreen-speed-keeps-fullscreen');
         await tap(selector('close-panel')); await tap(selector('next')); await waitPart(3);
-        assert.equal(await page.evaluate('!!document.fullscreenElement'), false);
+        assert.equal(await page.evaluate('!!window.__BILI_TOUCH_FULLSCREEN__&&innerWidth>innerHeight'), true);
+        await screenshot('course-fullscreen-next-p3');
         await record('fullscreen-next-p3');
+        await tap(selector('play'));
+        await waitFor('!document.querySelector("video").paused&&document.querySelector("video").currentTime>0.5');
+        await record('fullscreen-next-plays');
+        await tap(selector('next')); await waitPart(4);
+        await record('fullscreen-next-p4');
+        await tap(selector('previous')); await waitPart(3);
+        await screenshot('course-fullscreen-previous-p3'); await record('fullscreen-previous-p3');
+        execFileSync('adb', ['-s', serial, 'shell', 'input', 'keyevent', 'KEYCODE_BACK']);
+        await waitFor('!window.__BILI_TOUCH_FULLSCREEN__&&!document.fullscreenElement&&innerHeight>innerWidth');
+        await screenshot('course-exit-fullscreen'); await record('fullscreen-back-restores-portrait');
     } else if (stage === 'boundaries') {
         await navigate('https://www.bilibili.com/video/BV1T6VFzAE1c/?p=73');
         await waitPart(73);
@@ -159,6 +183,30 @@ try {
         await tap(selector('previous'));
         await waitFor(`location.pathname===${JSON.stringify(new URL(previous).pathname)}&&document.querySelector('video')?.readyState>=2&&document.querySelector('[data-episode-kind=collection] a[aria-current]')`);
         await record('first-part-previous-collection-video');
+    } else if (stage === 'collection-fullscreen') {
+        await navigate('https://www.bilibili.com/video/BV1Q4iJBAEsr/?p=35');
+        await waitPart(35);
+        await waitFor(`${q(selector('next'))}?.dataset.episodeUrl?.includes('BV1T6VFzAE1c')`);
+        await screenshot('collection-single-row'); await record('collection-last-part-single-row');
+        await tap(selector('fullscreen'));
+        await waitFor('document.fullscreenElement&&innerWidth>innerHeight');
+        await delay(700);
+        await tap(selector('next')); await waitPart(1);
+        await waitFor('location.pathname.includes("BV1T6VFzAE1c")');
+        await screenshot('collection-fullscreen-next'); await record('fullscreen-next-across-collection');
+        await tap(selector('previous'));
+        await waitFor('location.pathname.includes("BV1Q4iJBAEsr")&&document.querySelector("video")?.readyState>=2&&document.querySelector("[data-episode-kind=collection] a[aria-current]")');
+        await screenshot('collection-fullscreen-previous'); await record('fullscreen-previous-across-collection');
+        await tap(selector('fullscreen'));
+        await waitFor('!window.__BILI_TOUCH_FULLSCREEN__&&!document.fullscreenElement&&innerHeight>innerWidth');
+        await screenshot('collection-exit-fullscreen'); await record('exit-button-restores-portrait');
+        await tap(selector('fullscreen'));
+        await waitFor('document.fullscreenElement&&innerWidth>innerHeight');
+        await delay(700);
+        await tap(selector('next')); await waitPart(2);
+        await page.send('Page.navigate', { url: 'https://www.bilibili.com/video/BV1qMp46wE1n/' });
+        await waitFor('location.pathname.includes("BV1qMp46wE1n")&&document.querySelector("video")?.readyState>=2&&!window.__BILI_TOUCH_FULLSCREEN__&&innerHeight>innerWidth');
+        await record('unrelated-video-clears-fullscreen');
     } else if (stage === 'single') {
         await navigate('https://www.bilibili.com/video/BV1qMp46wE1n/');
         await waitFor('document.getElementById("bilispeed-episodes")?.hidden');
@@ -167,7 +215,7 @@ try {
         await tap(selector('speed')); await tap('[data-rate="1.25"]');
         await waitFor('document.querySelector("video").playbackRate===1.25');
         await tap(selector('close-panel')); await record('single-video-speed');
-    } else throw new Error('Use course, boundaries, or single');
+    } else throw new Error('Use course, boundaries, collection-fullscreen, or single');
 } catch (error) {
     await screenshot('player-' + stage + '-failure').catch(() => {});
     console.error(error); process.exitCode = 1;

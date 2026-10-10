@@ -51,7 +51,7 @@ html[data-bilispeed-touch] #bilispeed-touch-controls[data-hidden="true"] {
 }
 html[data-bilispeed-touch] #bilispeed-touch-controls button {
     min-width: 44px; min-height: 44px; padding: 0 6px; border: 0; border-radius: 6px;
-    color: #fff; background: transparent; font: 13px sans-serif; touch-action: manipulation;
+    color: #fff; background: transparent; font: 13px sans-serif; white-space: nowrap; touch-action: manipulation;
 }
 html[data-bilispeed-touch] #bilispeed-touch-controls button[aria-pressed="true"] { color: #ff91b2; }
 html[data-bilispeed-touch] #bilispeed-touch-controls button[hidden] { display: none !important; }
@@ -68,6 +68,8 @@ html[data-bilispeed-touch] #bilispeed-touch-controls input[type="range"] {
 }
 html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="seek"] { grid-column: 1 / -1; width: 100%; }
 html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="play"] { font-size: 20px; }
+html[data-bilispeed-touch] #bilispeed-touch-controls .episode-icon { display: none; width: 22px; height: 22px; vertical-align: middle; }
+html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="more"] { font-size: 24px; }
 html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="time"] {
     min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
 }
@@ -114,21 +116,28 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="full"],
 html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
     width: 100% !important; height: 100% !important; min-width: 0 !important; margin: 0 !important;
 }
+/* After a document navigation Android keeps the WebView in immersive landscape.
+   Present the new official player there without needing a second user gesture. */
+html[data-bilispeed-touch][data-bilispeed-fullscreen] { overflow: hidden !important; }
+html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player {
+    position: fixed !important; inset: 0 !important; z-index: 2147483646 !important; background: #000;
+}
+html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-player-container {
+    position: relative !important; inset: auto !important; transform: none !important;
+    width: 100% !important; height: 100% !important; min-width: 0 !important;
+}
 @media (max-width: 560px) {
-    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] { grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr) 44px 44px auto; padding-top: 6px; }
-    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] [data-bilispeed-control="play"] { grid-area: 2 / 1 / 3 / 2; }
-    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] [data-bilispeed-control="time"] { grid-area: 2 / 2 / 3 / 5; }
-    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] [data-bilispeed-control="speed"] { grid-area: 2 / 5 / 3 / 6; }
-    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] [data-bilispeed-control="fullscreen"] { grid-area: 2 / 6 / 3 / 7; }
-    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] [data-bilispeed-control="previous"] { grid-area: 3 / 1 / 4 / 3; }
-    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] [data-bilispeed-control="next"] { grid-area: 3 / 3 / 4 / 5; }
-    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] [data-bilispeed-control="volume"] { grid-area: 3 / 5 / 4 / 6; }
-    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] [data-bilispeed-control="subtitles"] { grid-area: 3 / 6 / 4 / 7; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls { padding-top: 6px; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls[data-has-episodes] { grid-template-columns: 44px 44px 44px minmax(0, 1fr) 44px 44px 44px; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls:not([data-has-episodes]) { grid-template-columns: 44px minmax(0, 1fr) 44px 44px 44px; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls .episode-label { display: none; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls .episode-icon { display: inline-block; }
 }
 @media (max-width: 360px) {
     html[data-bilispeed-touch] #bilispeed-touch-controls { padding-left: 4px; padding-right: 4px; }
     html[data-bilispeed-touch] #bilispeed-touch-controls button { padding: 0 4px; font-size: 12px; }
     html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="time"] { font-size: 11px; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls .time-duration { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
     html[data-bilispeed-touch] #bilispeed-touch-controls { transition: none; }
@@ -201,6 +210,7 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         parts.volume.setAttribute('aria-expanded', 'false');
         parts.subtitles.setAttribute('aria-expanded', 'false');
         parts.speed.setAttribute('aria-expanded', 'false');
+        parts.more.setAttribute('aria-expanded', 'false');
         scheduleHide();
     }
 
@@ -358,10 +368,12 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         parts.volumePanel.hidden = name !== 'volume';
         parts.subtitlePanel.hidden = name !== 'subtitles';
         parts.speedPanel.hidden = name !== 'speed';
+        parts.morePanel.hidden = name !== 'more';
         parts.volume.setAttribute('aria-expanded', String(name === 'volume'));
         parts.subtitles.setAttribute('aria-expanded', String(name === 'subtitles'));
         parts.speed.setAttribute('aria-expanded', String(name === 'speed'));
-        setText(parts.panelTitle, name === 'volume' ? '音量' : name === 'speed' ? '播放倍速' : '字幕');
+        parts.more.setAttribute('aria-expanded', String(name === 'more'));
+        setText(parts.panelTitle, name === 'volume' ? '音量' : name === 'speed' ? '播放倍速' : name === 'more' ? '播放设置' : '字幕');
         if (name === 'speed') {
             parts.customRate.value = String(selectedRate());
             parts.speedError.hidden = true;
@@ -392,6 +404,10 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         const target = state && state[direction];
         if (!target || suspended) return;
         cancelPreview(); closePanel();
+        if (isFullscreen() && window.BiliSpeedBridge) {
+            window.BiliSpeedBridge.postMessage(JSON.stringify({ type: 'change-episode', url: target.url }));
+            return;
+        }
         if (document.fullscreenElement) {
             try { await document.exitFullscreen(); } catch (_) { }
         } else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
@@ -432,14 +448,28 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         const play = button('play', '▶', () => togglePlayback(false));
         const previous = button('previous', '上一集', () => changeEpisode('previous'));
         const next = button('next', '下一集', () => changeEpisode('next'));
+        [previous, next].forEach((item, index) => {
+            const label = document.createElement('span'); label.className = 'episode-label'; label.textContent = item.textContent;
+            const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            icon.classList.add('episode-icon'); icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('aria-hidden', 'true');
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', index ? 'M18 5v14M5 5l10 7-10 7Z' : 'M6 5v14M19 5 9 12l10 7Z');
+            path.setAttribute('fill', 'currentColor'); path.setAttribute('stroke', 'currentColor'); path.setAttribute('stroke-width', '2');
+            icon.append(path); item.replaceChildren(label, icon);
+        });
         previous.hidden = next.hidden = true;
         const time = document.createElement('span');
         time.dataset.bilispeedControl = 'time';
+        const timeCurrent = document.createElement('span'), timeDuration = document.createElement('span');
+        timeDuration.className = 'time-duration'; time.append(timeCurrent, timeDuration);
         const volume = button('volume', '音量', () => togglePanel('volume'));
         const subtitles = button('subtitles', '字幕', () => togglePanel('subtitles'));
         const speed = button('speed', '倍速', () => togglePanel('speed'));
+        const more = button('more', '⋯', () => togglePanel('more')); more.hidden = true;
+        more.setAttribute('aria-label', '更多播放设置：音量与字幕');
         const full = button('fullscreen', '全屏', () => {
-            if (document.fullscreenElement) document.exitFullscreen().catch(() => update());
+            if (nativeFullscreen && window.BiliSpeedBridge) window.BiliSpeedBridge.postMessage(JSON.stringify({ type: 'exit-fullscreen' }));
+            else if (document.fullscreenElement) document.exitFullscreen().catch(() => update());
             else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
             else {
                 const active = currentVideo();
@@ -480,6 +510,9 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         volumePanel.append(volumeSlider, volumeValue, mute);
         const subtitlePanel = document.createElement('div');
         subtitlePanel.hidden = true;
+        const morePanel = document.createElement('div'); morePanel.hidden = true;
+        morePanel.append(button('more-volume', '音量', () => togglePanel('volume')),
+            button('more-subtitles', '字幕', () => togglePanel('subtitles')));
         const speedPanel = document.createElement('div'); speedPanel.hidden = true;
         const presets = document.createElement('div'); presets.className = 'speed-presets';
         [.25, .5, .75, 1, 1.25, 1.5, 2, 2.5, 3, 3.5, 4, 5].forEach(rate => {
@@ -502,12 +535,12 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         speedError.dataset.bilispeedControl = 'speed-error'; speedError.setAttribute('role', 'alert');
         speedError.textContent = '请输入 0.25–5 之间的倍速。';
         speedPanel.append(presets, custom, speedError);
-        settings.append(header, volumePanel, subtitlePanel, speedPanel);
-        [volume, subtitles, speed].forEach(item => { item.setAttribute('aria-controls', settings.id); item.setAttribute('aria-expanded', 'false'); });
-        controls.append(range, previous, play, next, time, speed, volume, subtitles, full, settings);
+        settings.append(header, volumePanel, subtitlePanel, speedPanel, morePanel);
+        [volume, subtitles, speed, more].forEach(item => { item.setAttribute('aria-controls', settings.id); item.setAttribute('aria-expanded', 'false'); });
+        controls.append(range, previous, play, next, time, speed, volume, subtitles, more, full, settings);
         feedback = document.createElement('div');
         feedback.id = 'bilispeed-seek-feedback'; feedback.hidden = true;
-        parts = { range, play, previous, next, time, speed, volume, subtitles, full, panel: settings, panelTitle: title,
+        parts = { range, play, previous, next, time, timeCurrent, timeDuration, speed, volume, subtitles, more, morePanel, full, panel: settings, panelTitle: title,
             volumePanel, volumeSlider, volumeValue, mute, subtitlePanel, subtitleOptions: subtitlePanel,
             speedPanel, presets, customRate, speedError };
     }
@@ -590,6 +623,11 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
 
     function updateLayout() {
         if (suspended || !video || !document.documentElement) return;
+        if (controls) {
+            const compact = matchMedia('(max-width: 560px)').matches;
+            parts.volume.hidden = parts.subtitles.hidden = compact;
+            parts.more.hidden = !compact;
+        }
         const wrap = document.getElementById('playerWrap');
         if (wrap && !fullscreen) {
             const width = wrap.clientWidth || innerWidth;
@@ -655,8 +693,10 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         const progress = String(canSeek ? Math.round(position / video.duration * 1000) : 0);
         if (parts.range.value !== progress) parts.range.value = progress;
         setAttribute(parts.range, 'aria-valuetext', timeLabel(position) + ' / ' + timeLabel(video.duration));
-        setText(parts.time, video.duration === Infinity ? '直播' : timeLabel(position) + ' / ' + timeLabel(video.duration));
+        setText(parts.timeCurrent, video.duration === Infinity ? '直播' : timeLabel(position));
+        setText(parts.timeDuration, video.duration === Infinity ? '' : ' / ' + timeLabel(video.duration));
         if (parts.time.title !== parts.time.textContent) parts.time.title = parts.time.textContent;
+        setAttribute(parts.time, 'aria-label', parts.time.textContent);
         setText(parts.full, full ? '退出' : '全屏');
         setAttribute(parts.full, 'aria-label', full ? '退出全屏' : '进入全屏');
         const volume = Math.round((video.muted ? 0 : video.volume) * 100);
