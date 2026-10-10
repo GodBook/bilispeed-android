@@ -24,7 +24,15 @@
 
 验证边界：真实账号稍后再看为空，带内容的网格/列表用官方结构夹具检查；当前粉丝、投稿与个人动态等空状态实测，公开UP有内容的投稿另行检查。没有在真实账号发送评论/动态、删除记录/收藏或修改隐私；这些官方写操作没有被宣称已实测。会员专属字幕未验。离线缓存仍为明确的说明入口，没有宣称新增下载能力。
 
-正式构建、GitHub发布、附件下载与最终手机清理：待本轮验收完成后补记。
+正式构建、GitHub发布、附件下载与最终手机清理（2026-10-10）：
+
+- [v1.2.7 Release](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.7) 于北京时间16:16:50发布为最新正式版本，非草稿、非预发布。源码标签指向`8b792cc244baa6680fdaf6047a76733402b5fa38`；main与标签已推送。
+- 从该提交重新构建assembleRelease与lintRelease通过，lint为0 errors / 4原有warnings。正式APK为1810586字节，SHA-256 `E8C11A20B8F8DA5FA6A5C7B0CC96C79786CCAEA6EF2442ABC2BF55631328DDED`，versionName1.2.7 / code11 / minSdk26 / targetSdk36，未启用DEBUGGABLE；v2签名通过，证书SHA-256仍为`e2d8ed51e71288c8f2a0ea81e3f7ac23aba499d59ed6d7eace205e78960f94b3`。
+- 正式包与最终已测候选逐项比较，76个ZIP条目仅`META-INF/version-control-info.textproto`变化，应用代码与资源完全相同，包内Git记录等于上述源码提交。记录`artifacts/release-1.2.7-build-verification.json`，没有将候选哈希冒充正式附件。
+- 三个正式附件重新下载后，逐个与本地文件、GitHub digest及大小核对一致。APK为上述哈希；update.json为1799字节，SHA-256 `C2F05F4F4C55DAA85AC7C838B1F1F8096806D9267FB233081B497CF73A59C4DB`；SHA256SUMS.txt为97字节，SHA-256 `6FA0A3C9761310CE7CF40F6B1F9DF3890CF0BB76E06D8F07C348E409FAFD19F6`。版本、包名、大小、APK哈希、发布说明与校验文件匹配，见`release-1.2.7-download-verification.json`。
+- 无GitHub登录凭据请求应用实际使用的`https://github.com/GodBook/bilispeed-android/releases/latest/download/update.json`，返回1.2.7 / code11，逐字节等于发布附件；继续从其中的公开APK地址匿名下载，哈希与大小一致。下载保存在`artifacts/release-verify-1.2.7/`。
+- 手机额外运行PublishedUpdateSmokeTest，在读取GitHub更新信息时出现SocketTimeoutException，1项失败，记录`device-1.2.7-published-update.txt`。电脑匿名公开渠道校验通过，但不能代替手机当前Wi-Fi上的完整在线更新下载；保留原网络与HTTPS校验，没有把这项额外网络检查计入87项回归通过。
+- 从公开地址下载的正式APK已原签名覆盖安装到同一手机；拉取已安装base.apk后哈希与正式附件完全一致。原始偏好已恢复并删除快照，实际设置1x仍选中，登录态历史有内容。一次性runner已卸载，WebView调试socket及tcp9222转发均为0，休眠超时恢复600000，Wi-Fi与无线ADB保留；手机停留在新版历史记录页。证据`release-1.2.7-device-install.json`、`release-1.2.7-final-device-state.json`及最终原生截图。
 
 ## 1.2.6：底部设置、倍速整合与重复工作削减
 
