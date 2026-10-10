@@ -97,6 +97,7 @@ public class MainActivity extends Activity {
     private FrameLayout fullscreenHost;
     private LinearLayout floating;
     private LinearLayout navigation;
+    private SettingsPanel settingsPanel;
     private final ArrayList<TextView> navigationItems = new ArrayList<>();
     private TextView speedButton;
     private TextView menuButton;
@@ -115,6 +116,8 @@ public class MainActivity extends Activity {
     private WebChromeClient.CustomViewCallback fullscreenCallback;
     private ValueCallback<Uri[]> uploadCallback;
     private ScriptHandler documentScript;
+    private String documentState;
+    private int pageGeneration;
     private String injection;
     private String touchInjection;
     private String lastPageUrl = HOME;
@@ -194,6 +197,11 @@ public class MainActivity extends Activity {
             if (previous != null && !previous.equals(desktopUrl(previous))) browser.loadUrl(desktopUrl(previous));
         }
         updateFloatingLabel();
+        if (savedInstanceState != null && savedInstanceState.getBoolean("settingsOpen")) {
+            showSettings();
+            int scroll = savedInstanceState.getInt("settingsScroll");
+            settingsPanel.post(() -> settingsPanel.scrollTo(0, scroll));
+        }
     }
 
     private String readAsset(String name) {
@@ -216,11 +224,6 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(Color.WHITE);
         setContentView(root);
         root.setOnApplyWindowInsetsListener((view, insets) -> {
-            boolean keyboardVisible = WindowInsetsCompat.toWindowInsetsCompat(insets, view)
-                    .isVisible(WindowInsetsCompat.Type.ime());
-            // Preserve the drag geometry while keeping playback buttons out of
-            // focused login/search forms. Back restores them with the keyboard.
-            if (floating != null) floating.setVisibility(keyboardVisible ? View.INVISIBLE : View.VISIBLE);
             if (Build.VERSION.SDK_INT >= 30) {
                 android.graphics.Insets safe = insets.getInsets(WindowInsets.Type.systemBars()
                         | WindowInsets.Type.displayCutout() | WindowInsets.Type.ime());
@@ -262,17 +265,25 @@ public class MainActivity extends Activity {
         navigation.setGravity(Gravity.CENTER);
         navigation.setBackgroundColor(Color.WHITE);
         navigation.setElevation(dp(3));
-        String[] labels = {"首页", "热门", "搜索", "动态", "我的"};
+        String[] labels = {"首页", "热门", "搜索", "动态", "我的", "设置"};
         for (int index = 0; index < labels.length; index++) {
             final int item = index;
-            TextView tab = text(labels[index], 15, MUTED);
+            TextView tab = text(labels[index], 11, MUTED);
             tab.setGravity(Gravity.CENTER);
-            tab.setTypeface(null, Typeface.BOLD);
+            tab.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+            NavigationIcon icon = new NavigationIcon(index, MUTED);
+            icon.setBounds(0, 0, dp(21), dp(21));
+            tab.setCompoundDrawables(null, icon, null, null);
+            tab.setCompoundDrawablePadding(dp(4));
+            tab.setBackground(new android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(Color.argb(24, 232, 85, 127)), null, null));
             tab.setClickable(true);
             tab.setFocusable(true);
             tab.setContentDescription("B站" + labels[index]);
             tab.setOnClickListener(view -> {
                 if (fullscreenView != null) exitFullscreen();
+                if (item == 5) { showSettings(); return; }
+                closeSettings();
                 switch (item) {
                     case 0: browser.loadUrl(HOME); break;
                     case 1: browser.loadUrl("https://www.bilibili.com/v/popular/all"); break;
@@ -320,6 +331,9 @@ public class MainActivity extends Activity {
         speedLayout.leftMargin = dp(6);
         floating.addView(speedTouchTarget, speedLayout);
         root.addView(floating, new FrameLayout.LayoutParams(-2, -2));
+        // The bottom Settings tab owns both functions now. Never expose the old
+        // floating targets, including after IME, rotation or fullscreen changes.
+        floating.setVisibility(View.GONE);
         applyFloatingAppearance();
         View.OnTouchListener drag = new View.OnTouchListener() {
             private float downX, downY, startX, startY;
@@ -447,6 +461,7 @@ public class MainActivity extends Activity {
                 return navigate(request.getUrl().toString(), request.hasGesture());
             }
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                pageGeneration++;
                 if (destroyed || view != browser) return;
                 String mapped = desktopUrl(url);
                 if (!mapped.equals(url)) { view.stopLoading(); view.loadUrl(mapped); return; }
@@ -594,9 +609,12 @@ public class MainActivity extends Activity {
 
     private void updateDocumentScript() {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return;
+        String state = controllerInitialState();
+        if (documentScript != null && state.equals(documentState)) return;
         if (documentScript != null) documentScript.remove();
         documentScript = WebViewCompat.addDocumentStartJavaScript(browser,
-                controllerInitialState() + touchInjection + "\n" + injection, ORIGINS);
+                state + touchInjection + "\n" + injection, ORIGINS);
+        documentState = state;
     }
 
     private String controllerInitialState() {
@@ -608,9 +626,17 @@ public class MainActivity extends Activity {
 
     private void injectIntoPage() {
         if (destroyed || !isBiliHttps(browser.getUrl())) return;
-        browser.evaluateJavascript(controllerInitialState() + touchInjection + "\n" + injection
-                + "\nwindow.__BiliSpeed && window.__BiliSpeed.configure(" + configMessage() + ");"
-                + "window.__BiliTouchPlayer && window.__BiliTouchPlayer.setAppearance(" + subtitleAppearance() + ");", null);
+        WebView owner = browser;
+        int generation = pageGeneration;
+        // State changes should not send and parse all adaptation scripts again.
+        // Retain the full bootstrap only for older WebViews or a new document
+        // which has not received its document-start script yet.
+        owner.evaluateJavascript("!!window.__BiliSpeed && window.__BiliSpeed.configure(" + configMessage() + ")", value -> {
+            if (destroyed || owner != browser || generation != pageGeneration || "true".equals(value)
+                    || !isBiliHttps(owner.getUrl())) return;
+            owner.evaluateJavascript(controllerInitialState() + touchInjection + "\n" + injection
+                    + "\nwindow.__BiliSpeed && window.__BiliSpeed.configure(" + configMessage() + ");", null);
+        });
     }
 
     private String configMessage() {
@@ -629,13 +655,19 @@ public class MainActivity extends Activity {
 
     void selectRate(float rate) {
         if (!validRate(rate)) return;
-        selectedRate = Math.round(rate * 100) / 100f;
+        float rounded = Math.round(rate * 100) / 100f;
+        if (Math.abs(selectedRate - rounded) < .001f) {
+            if (settingsPanel != null) settingsPanel.setRate(selectedRate);
+            return;
+        }
+        selectedRate = rounded;
         if (preferences.getBoolean("remember", true)) preferences.edit().putFloat("rate", selectedRate).apply();
         updateDocumentScript();
         configureFrames();
         injectIntoPage();
         updateFloatingLabel();
         updatePanelSelection();
+        if (settingsPanel != null) settingsPanel.setRate(selectedRate);
         updatePlaybackStatus();
     }
 
@@ -663,14 +695,89 @@ public class MainActivity extends Activity {
             }
         }
         setKeepingScreenOn(playing && foreground);
-        if (statusText != null) {
+        if (statusText != null || settingsShown()) {
             String status;
             if (live) status = "直播保持 1x；倍速将用于普通视频";
             else if (ready && applied) status = "已应用 " + formatRate(selectedRate) + " · " + (playing ? "正在播放" : "视频已就绪");
             else if (ready) status = "正在应用 " + formatRate(selectedRate) + "…";
             else if (hasVideo) status = "已选择 " + formatRate(selectedRate) + "，视频加载后生效";
             else status = "已选择 " + formatRate(selectedRate) + "，打开视频后自动生效";
-            if (!status.contentEquals(statusText.getText())) statusText.setText(status);
+            if (statusText != null && !status.contentEquals(statusText.getText())) statusText.setText(status);
+            if (settingsShown()) {
+                settingsPanel.setPlaybackStatus(status);
+                settingsPanel.setUpdateLabel(updater.menuLabel());
+            }
+        }
+    }
+
+    private boolean settingsShown() { return settingsPanel != null && settingsPanel.getVisibility() == View.VISIBLE; }
+
+    void showSettings() {
+        if (fullscreenView != null) exitFullscreen();
+        if (settingsPanel == null) {
+            settingsPanel = new SettingsPanel(this, new SettingsPanel.Listener() {
+                @Override public void onRate(float rate) { selectRate(rate); }
+                @Override public void onRemember(boolean enabled) {
+                    SharedPreferences.Editor editor = preferences.edit().putBoolean("remember", enabled);
+                    if (enabled) editor.putFloat("rate", selectedRate); else editor.remove("rate");
+                    editor.apply();
+                }
+                @Override public void onTouchLayout(boolean enabled) { setTouchLayout(enabled); }
+                @Override public void onAutomatic(boolean enabled) {
+                    if (updater.automaticEnabled() != enabled) updater.toggleAutomatic();
+                }
+                @Override public void onAction(String action) { settingsAction(action); }
+            });
+            FrameLayout.LayoutParams layout = new FrameLayout.LayoutParams(-1, -1);
+            layout.bottomMargin = dp(56);
+            // Opaque native content covers the web page without changing its
+            // history, scroll position or media element.
+            root.addView(settingsPanel, root.indexOfChild(navigation), layout);
+        }
+        settingsPanel.setVisibility(View.VISIBLE);
+        settingsPanel.sync(selectedRate, preferences.getBoolean("remember", true), touchLayout,
+                updater.automaticEnabled(), updater.menuLabel());
+        browser.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        errorPanel.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        updateNavigation(browser.getUrl());
+        updatePlaybackStatus();
+    }
+
+    void closeSettings() {
+        if (!settingsShown()) return;
+        ((InputMethodManager) getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(settingsPanel.getWindowToken(), 0);
+        settingsPanel.clearFocus();
+        settingsPanel.setVisibility(View.GONE);
+        browser.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        errorPanel.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        updateNavigation(browser.getUrl());
+    }
+
+    private void settingsAction(String action) {
+        switch (action) {
+            case "back": closeSettings(); break;
+            case "appearance": showButtonAppearance(); break;
+            case "open": showOpenLink(); break;
+            case "copy":
+                String url = recoveryUrl != null ? recoveryUrl : browser.getUrl();
+                if (url != null) {
+                    ((android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(
+                            android.content.ClipData.newPlainText("视频链接", url));
+                    toast("链接已复制");
+                }
+                break;
+            case "reload": closeSettings(); reloadPage(); break;
+            case "external": openExternal(recoveryUrl != null ? recoveryUrl : browser.getUrl()); break;
+            case "update": updater.checkManually(); break;
+            case "source": openExternal("https://github.com/" + BuildConfig.UPDATE_REPOSITORY); break;
+            case "about":
+                new AlertDialog.Builder(this).setTitle("B站倍速浏览器 " + BuildConfig.VERSION_NAME)
+                        .setMessage("在底部「设置」调节 0.25–5x 倍速，修改后即时生效并自动保存。全屏播放时，先退出全屏即可进入设置。\n\n"
+                                + "手机触屏布局提供双击暂停、滑动进度、音量与字幕；关闭后可使用电脑原版和双指缩放。\n\n"
+                                + "这是个人第三方浏览器，内容、登录和播放权限由 B 站官方网页提供；暂不支持离线缓存。\n\n"
+                                + "更新来自本项目 GitHub Releases，下载和安装需手动确认。")
+                        .setPositiveButton("知道了", null).show();
+                break;
         }
     }
 
@@ -914,7 +1021,7 @@ public class MainActivity extends Activity {
         panel.addView(hint);
         ArrayList<SeekBar> sliders = new ArrayList<>();
         String[] labels = {"三点按钮", "倍速按钮", "字幕按钮"};
-        for (int index = 0; index < APPEARANCE_TARGETS.length; index++) {
+        for (int index = 2; index < APPEARANCE_TARGETS.length; index++) {
             String target = APPEARANCE_TARGETS[index];
             LinearLayout heading = new LinearLayout(this);
             heading.setGravity(Gravity.CENTER_VERTICAL);
@@ -939,7 +1046,7 @@ public class MainActivity extends Activity {
         }
         ScrollView scroll = new ScrollView(this);
         scroll.addView(panel);
-        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("按钮外观").setView(scroll)
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("字幕按钮外观").setView(scroll)
                 .setNeutralButton("恢复默认", null).setPositiveButton("完成", null).create();
         appearanceDialog = dialog;
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(view -> {
@@ -952,7 +1059,7 @@ public class MainActivity extends Activity {
         Window window = dialog.getWindow();
         if (window != null) {
             int available = Math.max(dp(240), root.getHeight() - root.getPaddingTop() - root.getPaddingBottom() - dp(32));
-            window.setLayout(Math.min(root.getWidth() - dp(24), dp(440)), available);
+            window.setLayout(Math.min(root.getWidth() - dp(24), dp(440)), Math.min(dp(390), available));
         }
     }
 
@@ -1009,6 +1116,7 @@ public class MainActivity extends Activity {
             String value = resolveUrlInput(input.getText().toString());
             if (value == null) { input.setError("请输入网页链接、分享文本或 BV 号"); return; }
             browser.loadUrl(desktopUrl(value));
+            closeSettings();
             dialog.dismiss();
         }));
         dialog.show();
@@ -1108,6 +1216,7 @@ public class MainActivity extends Activity {
     }
 
     void setTouchLayout(boolean enabled) {
+        if (touchLayout == enabled) return;
         touchLayout = enabled;
         preferences.edit().putBoolean("touchLayout", enabled).apply();
         browser.getSettings().setUseWideViewPort(!enabled);
@@ -1121,7 +1230,8 @@ public class MainActivity extends Activity {
     }
 
     private void updateBrowserLayout() {
-        boolean visible = touchLayout && fullscreenView == null;
+        // Settings must remain reachable in the original desktop layout too.
+        boolean visible = fullscreenView == null;
         navigation.setVisibility(visible ? View.VISIBLE : View.GONE);
         int margin = visible ? dp(56) : 0;
         FrameLayout.LayoutParams content = (FrameLayout.LayoutParams) browser.getLayoutParams();
@@ -1147,10 +1257,12 @@ public class MainActivity extends Activity {
             if (path.startsWith("/v/popular")) selected = 1;
             else if (path.equals("/") || path.isEmpty()) selected = 0;
         }
+        if (settingsShown()) selected = 5;
         for (int index = 0; index < navigationItems.size(); index++) {
             TextView tab = navigationItems.get(index);
             tab.setSelected(index == selected);
             tab.setTextColor(index == selected ? PINK : MUTED);
+            tab.getCompoundDrawables()[1].setTint(index == selected ? PINK : MUTED);
         }
     }
 
@@ -1229,6 +1341,7 @@ public class MainActivity extends Activity {
     }
 
     private void enterFullscreen(View view, WebChromeClient.CustomViewCallback callback) {
+        closeSettings();
         if (fullscreenView != null) { callback.onCustomViewHidden(); return; }
         fullscreenView = view;
         fullscreenCallback = callback;
@@ -1306,6 +1419,7 @@ public class MainActivity extends Activity {
     private void goBack() {
         if (speedDialog != null && speedDialog.isShowing()) speedDialog.dismiss();
         else if (appearanceDialog != null && appearanceDialog.isShowing()) appearanceDialog.dismiss();
+        else if (settingsShown()) closeSettings();
         else if (fullscreenView != null) exitFullscreen();
         else if (browser.canGoBack()) browser.goBack();
         else finish();
@@ -1363,6 +1477,8 @@ public class MainActivity extends Activity {
         String url = recoveryUrl != null ? recoveryUrl : browser.getUrl();
         if (url != null && url.length() <= 8192 && isHttps(url)) state.putString("currentUrl", url);
         state.putFloat("selectedRate", selectedRate);
+        state.putBoolean("settingsOpen", settingsShown());
+        if (settingsPanel != null) state.putInt("settingsScroll", settingsPanel.getScrollY());
         super.onSaveInstanceState(state);
     }
     @Override protected void onActivityResult(int request, int result, Intent data) {
@@ -1393,6 +1509,7 @@ public class MainActivity extends Activity {
     WebView browserForTesting() { return browser; }
     Dialog speedDialogForTesting() { return speedDialog; }
     Dialog appearanceDialogForTesting() { return appearanceDialog; }
+    View settingsForTesting() { return settingsPanel; }
     boolean fullscreenForTesting() { return fullscreenView != null; }
     View fullscreenViewForTesting() { return fullscreenView; }
 

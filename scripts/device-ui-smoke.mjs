@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 const page = await connectDevice();
 const stage = process.argv[2];
 const serial = process.argv[3] || process.env.BILISPEED_TEST_SERIAL || process.env.ANDROID_SERIAL;
+const evidencePrefix = process.env.BILISPEED_EVIDENCE_PREFIX || '';
 const stages = {
     home: ['https://www.bilibili.com/', '.bili-video-card'],
     search: ['https://search.bilibili.com/all?keyword=%E7%94%B5%E8%B7%AF5%E5%B0%8F%E6%97%B6', '.bili-video-card__info--tit'],
@@ -32,10 +33,10 @@ async function waitFor(expression, seconds = 40) {
 }
 async function screenshot(name) {
     const result = await page.send('Page.captureScreenshot', { format: 'png' });
-    await writeFile('artifacts/device-' + name + '-after.png', Buffer.from(result.data, 'base64'));
+    await writeFile('artifacts/device-' + evidencePrefix + name + '-after.png', Buffer.from(result.data, 'base64'));
     if (serial) {
         execFileSync('adb', ['-s', serial, 'shell', 'screencap', '-p', '/data/local/tmp/bilispeed-preview.png']);
-        execFileSync('adb', ['-s', serial, 'pull', '/data/local/tmp/bilispeed-preview.png', 'artifacts/device-' + name + '-native.png'], { stdio: 'ignore' });
+        execFileSync('adb', ['-s', serial, 'pull', '/data/local/tmp/bilispeed-preview.png', 'artifacts/device-' + evidencePrefix + name + '-native.png'], { stdio: 'ignore' });
     }
 }
 try {
@@ -87,7 +88,7 @@ try {
         && (!result.modalTitle || result.modalTitle.right <= result.modal.right)
         && result.modalAgreement.x >= result.modal.x && result.modalAgreement.right <= result.modal.right, 'Inline login dialog is clipped');
     await screenshot(stage);
-    await writeFile('artifacts/device-' + stage + '-result.json', JSON.stringify(result, null, 2));
+    await writeFile('artifacts/device-' + evidencePrefix + stage + '-result.json', JSON.stringify(result, null, 2));
     console.log(JSON.stringify({status:'PASS',stage,url:result.url,width:result.width,cards:result.cards.length,firstCardWidth:result.cards[0]?.w,video:result.video}));
 } catch (error) {
     await screenshot(stage + '-failure').catch(() => {});

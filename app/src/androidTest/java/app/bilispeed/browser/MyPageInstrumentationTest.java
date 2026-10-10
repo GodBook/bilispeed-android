@@ -26,6 +26,7 @@ import static org.junit.Assert.*;
 public class MyPageInstrumentationTest {
     private final Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
     private MainActivity activity;
+    private int fixtureId;
 
     @Before public void launch() {
         Context target = instrumentation.getTargetContext();
@@ -53,7 +54,11 @@ public class MyPageInstrumentationTest {
     private void await(String condition) throws Exception {
         long deadline = SystemClock.elapsedRealtime() + 15000;
         while (SystemClock.elapsedRealtime() < deadline) {
-            if (Boolean.TRUE.equals(js("Boolean(" + condition + ")"))) return;
+            try {
+                if (Boolean.TRUE.equals(js("Boolean(" + condition + ")"))) return;
+            } catch (AssertionError error) {
+                if (!"No response from WebView".equals(error.getMessage())) throw error;
+            }
             SystemClock.sleep(100);
         }
         fail("Condition timed out: " + condition);
@@ -79,12 +84,13 @@ public class MyPageInstrumentationTest {
             while ((length = input.read(chunk)) != -1) buffer.write(chunk, 0, length);
             html = new String(buffer.toByteArray(), StandardCharsets.UTF_8);
         }
-        String page = html.replace("<head>", "<head><script>" + fetch + "</script>");
+        int identity = ++fixtureId;
+        String page = html.replace("<head>", "<head><script>window.myFixtureId=" + identity + ";" + fetch + "</script>");
         instrumentation.runOnMainSync(() -> {
             activity.browserForTesting().stopLoading();
             activity.browserForTesting().loadDataWithBaseURL(MainActivity.MY_PAGE, page, "text/html", "UTF-8", null);
         });
-        await("document.querySelector('.shortcuts') && document.getElementById('status').textContent!=='正在加载账号信息…'");
+        await("window.myFixtureId===" + identity + " && document.querySelector('.shortcuts') && document.getElementById('status').textContent!=='正在加载账号信息…'");
     }
 
     @Test public void myTabOpensPackagedPageDirectlyWithRealAssets() throws Exception {
@@ -94,9 +100,15 @@ public class MyPageInstrumentationTest {
         });
         await("location.pathname==='/__bilispeed__/me' && document.querySelector('.my-page') && document.readyState==='complete'");
         assertTrue((Boolean) js("getComputedStyle(document.querySelector('.shortcuts')).display==='grid'"));
-        js("document.getElementById('night').click();true");
-        assertEquals("true", js("document.getElementById('night').getAttribute('aria-pressed')"));
-        js("document.getElementById('night').click();document.getElementById('offline').click();true");
+        js("window.nightBefore=document.getElementById('night').getAttribute('aria-pressed');window.nightStored=localStorage.getItem('bilispeed-profile-night');true");
+        try {
+            js("document.getElementById('night').click();true");
+            assertTrue((Boolean) js("document.getElementById('night').getAttribute('aria-pressed')!==nightBefore"));
+        } finally {
+            js("if(document.getElementById('night').getAttribute('aria-pressed')!==nightBefore)document.getElementById('night').click();"
+                    + "if(nightStored===null)localStorage.removeItem('bilispeed-profile-night');else localStorage.setItem('bilispeed-profile-night',nightStored);true");
+        }
+        js("document.getElementById('offline').click();true");
         assertTrue((Boolean) js("document.getElementById('offline-dialog').open && /暂不支持/.test(document.getElementById('offline-dialog').textContent)"));
         instrumentation.runOnMainSync(() -> assertTrue(label(activity.getWindow().getDecorView(), "我的").isSelected()));
     }

@@ -1,4 +1,24 @@
-# 2026-10-10 真机适配修复检查点
+# 2026-10-10 1.2.6 设置与流畅度检查点
+
+任务：隐藏三点和倍速浮钮，在底部「我的」右侧新增设置，整合倍速与浏览选项，削减重复脚本工作；真机通过后更新 GitHub 与 Release。
+
+工作位置：本项目 main，起点 16b9183（1.2.5），开始时工作区干净。生产实现与实体手机验收已完成，正在整理正式发布；最终附件与更新渠道结果见 VALIDATION.md 的 1.2.6 节。
+
+设备：无线 ADB 10.93.192.96:5555，小米 9 SE / Android15 API35 / WebView153.0.8010.36 / 1080×2340 / density440。本轮使用手机已有 Wi-Fi，无需网络代理。测试时临时把 screen_off_timeout 从600000调至1800000，收尾恢复600000；保留无线调试连接。
+
+证据：`artifacts/device-1.2.6-full-regression.txt`（75项组合67通过）、`device-1.2.6-targeted-retest.txt`（10项9通过）、`device-1.2.6-fullscreen-final.txt`（余下1项通过），按方法去重75项均取得通过结果。新设置5项及九档真实播放计时在真机通过。扫描对照为 `device-performance-1.2.5-baseline.json` 与 `device-performance-1.2.6.json`。完整范围、失败原因及模拟器计时限制见 VALIDATION.md。
+
+SettingsInstrumentationTest 可独立在用户手机运行，自动恢复偏好且不清理 Cookies。旧夹具会重置偏好，必须在会话前后显式运行：
+
+```powershell
+adb -s <serial> shell am instrument -w -r -e class app.bilispeed.browser.DevicePreferencesProbe#savePreferences app.bilispeed.browser.test/androidx.test.runner.AndroidJUnitRunner
+# 运行所需旧夹具；即使失败也执行下面的恢复。
+adb -s <serial> shell am instrument -w -r -e class app.bilispeed.browser.DevicePreferencesProbe#restorePreferences app.bilispeed.browser.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+快照位于应用私有 files/device-test-preferences.json，不包含 Cookies；恢复成功后自动删除，存在旧快照时拒绝覆盖。真实页面检查使用 DeviceUiInspectionTest 临时开启调试、ADB forward tcp:9222，以及 `BILISPEED_EVIDENCE_PREFIX=1.2.6-` 的 device-ui-smoke.mjs；不覆写上一版的界面证据。停止会话后移除转发并卸载一次性测试 runner，主应用继续保留。
+
+# 2026-10-10 1.2.5 真机适配修复检查点（历史）
 
 当前任务：修复热门、搜索及播放时查看评论的显示异常，在连接的手机上逐页检查适配。完整验收证据以 [VALIDATION.md](VALIDATION.md) 的1.2.5节为准。
 

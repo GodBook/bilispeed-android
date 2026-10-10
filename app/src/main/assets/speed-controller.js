@@ -16,6 +16,8 @@
     const bound = new WeakSet();
     const roots = new WeakSet();
     const frames = new WeakSet();
+    const animatedOverlays = '#bilispeed-touch-controls, #bilispeed-seek-feedback, '
+        + '.bpx-player-dm-wrap, .bpx-player-dm-container, .bpx-player-subtitle-wrap';
     const prototype = HTMLMediaElement.prototype;
     const rateDescriptor = Object.getOwnPropertyDescriptor(prototype, 'playbackRate');
     const defaultDescriptor = Object.getOwnPropertyDescriptor(prototype, 'defaultPlaybackRate');
@@ -225,10 +227,22 @@
         // Native autoplay does not call the JavaScript play() method.
         root.addEventListener('play', blockBackgroundPlay, true);
         const observer = new MutationObserver(records => {
-            records.forEach(record => record.addedNodes.forEach(node => {
-                if (node.nodeType === 1 || node.nodeType === 11) pendingRoots.add(node);
-            }));
-            scheduleReport();
+            let changed = false;
+            records.forEach(record => {
+                // Progress labels, subtitles and flying danmaku can change many
+                // times per second; they do not mount media players.
+                const target = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+                if (target && target.closest(animatedOverlays)) return;
+                record.addedNodes.forEach(node => {
+                    if ((node.nodeType === 1 || node.nodeType === 11)
+                            && !(node.matches && node.matches(animatedOverlays))) {
+                        pendingRoots.add(node);
+                        changed = true;
+                    }
+                });
+                if (record.removedNodes.length && (videos.size || managedFrames.size || observers.size > 1)) changed = true;
+            });
+            if (changed) scheduleReport();
         });
         observer.observe(root, { childList: true, subtree: true });
         observers.set(root, observer);
@@ -283,10 +297,11 @@
     function setRate(rate) {
         const number = Number(rate);
         if (!valid(number)) return false;
+        const changed = Math.abs(wanted - number) > .001;
         wanted = Math.round(number * 100) / 100;
         videos.forEach(apply);
         sendToFrames(frameConfig());
-        report(true);
+        report(changed);
         return true;
     }
 

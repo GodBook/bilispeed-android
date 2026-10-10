@@ -286,6 +286,10 @@ public class PlayerControlsInstrumentationTest {
         tap("[data-bilispeed-control=fullscreen]");
         await("document.fullscreenElement && innerWidth>innerHeight && " + CONTROLS + ".dataset.hidden==='true'");
         dismissImmersiveHint(instrumentation);
+        // Rotation and immersive system-bar insets can dispatch a final resize
+        // after the CSS viewport changes. Resize intentionally cancels a pending
+        // tap, so let that transition settle before testing the surface action.
+        SystemClock.sleep(400);
         tap(HOST); await(CONTROLS + ".dataset.hidden==='false'");
         click("volume");
         assertEquals("0.3", js("getComputedStyle(document.querySelector('[data-bilispeed-control=subtitles]')).opacity"));

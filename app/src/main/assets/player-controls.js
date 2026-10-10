@@ -135,6 +135,10 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
         if (element.textContent !== text) element.textContent = text;
     }
 
+    function setAttribute(element, name, value) {
+        if (element.getAttribute(name) !== value) element.setAttribute(name, value);
+    }
+
     function seekable(item) {
         return item && item.readyState >= 1 && Number.isFinite(item.duration) && item.duration > 0;
     }
@@ -167,6 +171,7 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
 
     function showControls() {
         setVisible(true);
+        update();
         scheduleHide();
     }
 
@@ -534,28 +539,33 @@ html[data-bilispeed-touch] .bpx-player-container[data-screen="web"] {
             setVisible(!full);
             updateLayout();
         }
+        // Fullscreen controls are usually hidden. Catch up when shown instead
+        // of changing their range, labels and subtitle queries on timeupdate.
+        if (controls.dataset.hidden === 'true' && !panel && preview === null && !gesture) return;
         const playing = !video.paused && !video.ended;
         setText(parts.play, playing ? 'Ⅱ' : '▶');
-        parts.play.setAttribute('aria-label', playing ? '暂停视频' : '播放视频');
-        parts.range.disabled = !seekable(video);
+        setAttribute(parts.play, 'aria-label', playing ? '暂停视频' : '播放视频');
+        const canSeek = seekable(video);
+        if (parts.range.disabled === canSeek) parts.range.disabled = !canSeek;
         const position = preview !== null ? preview : video.currentTime;
-        parts.range.value = seekable(video) ? Math.round(position / video.duration * 1000) : 0;
-        parts.range.setAttribute('aria-valuetext', timeLabel(position) + ' / ' + timeLabel(video.duration));
+        const progress = String(canSeek ? Math.round(position / video.duration * 1000) : 0);
+        if (parts.range.value !== progress) parts.range.value = progress;
+        setAttribute(parts.range, 'aria-valuetext', timeLabel(position) + ' / ' + timeLabel(video.duration));
         setText(parts.time, video.duration === Infinity ? '直播' : timeLabel(position) + ' / ' + timeLabel(video.duration));
-        parts.time.title = parts.time.textContent;
+        if (parts.time.title !== parts.time.textContent) parts.time.title = parts.time.textContent;
         setText(parts.full, full ? '退出' : '全屏');
-        parts.full.setAttribute('aria-label', full ? '退出全屏' : '进入全屏');
+        setAttribute(parts.full, 'aria-label', full ? '退出全屏' : '进入全屏');
         const volume = Math.round((video.muted ? 0 : video.volume) * 100);
-        parts.volumeSlider.value = volume;
-        parts.volumeSlider.setAttribute('aria-valuetext', volume + '%');
+        if (parts.volumeSlider.value !== String(volume)) parts.volumeSlider.value = volume;
+        setAttribute(parts.volumeSlider, 'aria-valuetext', volume + '%');
         setText(parts.volumeValue, volume + '%');
         setText(parts.volume, volume === 0 ? '静音' : '音量');
-        parts.volume.setAttribute('aria-label', '调节音量，当前 ' + volume + '%');
-        parts.mute.setAttribute('aria-pressed', String(volume === 0));
+        setAttribute(parts.volume, 'aria-label', '调节音量，当前 ' + volume + '%');
+        setAttribute(parts.mute, 'aria-pressed', String(volume === 0));
         setText(parts.mute, volume === 0 ? '取消静音' : '静音');
         const subtitles = subtitleState();
-        parts.subtitles.setAttribute('aria-pressed', String(subtitles.enabled));
-        parts.subtitles.setAttribute('aria-label', subtitles.enabled ? '字幕已开启，点击选择' : '开启或选择字幕');
+        setAttribute(parts.subtitles, 'aria-pressed', String(subtitles.enabled));
+        setAttribute(parts.subtitles, 'aria-label', subtitles.enabled ? '字幕已开启，点击选择' : '开启或选择字幕');
     }
 
     function refresh() {

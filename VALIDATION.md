@@ -1,5 +1,20 @@
 # Android 16 验收记录
 
+## 1.2.6：底部设置、倍速整合与重复工作削减
+
+验收日期：2026-10-10（北京时间）。按用户要求使用已连接无线调试的实体小米 9 SE：10.93.192.96:5555 / Android 15（API 35）/ WebView 153.0.8010.36 / 1080×2340 / density440。实站使用手机现有 Wi-Fi，未更改其联网方式。另用 Android 16 / WebView 133 模拟器验证 320px 窄屏。
+
+- 三点与倍速浮钮在普通浏览、设置、输入和全屏中始终隐藏；底部设置位于「我的」右侧，并在电脑原版布局中保留。设置按播放、浏览与外观、常用工具、关于与更新分组，包含九档倍速、滑杆、自定义校验、记忆、布局、字幕外观、链接工具及更新开关。真机截图为 `artifacts/device-1.2.6-settings.png`、`device-1.2.6-settings-live.png`、`device-1.2.6-settings-video-native.png`。
+- 新设置专项 5 项在真机组合运行中全部通过：真实原生触摸切换九档与输入、无效数值、持久化及忘记倍速、布局和更新开关、返回时网页身份 / 滚动位置 / 播放保留、动画变化过滤及视频替换。九档实际播放计时按 3 次采样取中位数，1 / 1.25 / 1.5 / 2 / 2.5 / 3 / 3.5 / 4 / 5x 分别约为 1.000 / 1.250 / 1.501 / 2.001 / 2.500 / 2.998 / 3.499 / 3.996 / 4.998x。原始日志为 `artifacts/device-1.2.6-real-rate-timing.txt`；这是本地测试媒体，不代替所有网络视频的解码表现。
+- 对照手机原装 1.2.5 与候选 1.2.6，在相同 12 批 / 648 个弹幕元素的受控变化中，播放器发现的子树扫描从 216 次降到 0 次，两个版本都能发现随后加入的视频。探针为 `scripts/device-performance-probe.mjs`，结果为 `artifacts/device-performance-1.2.5-baseline.json` 和 `device-performance-1.2.6.json`。不把计数变化换算成整机帧率或续航提升。
+- 真实首页、搜索、热门、我的、竖屏视频和播放中评论通过尺寸与截图检查，证据为 `artifacts/device-1.2.6-*-result.json` 和 `device-1.2.6-*-native.png`。在 `BV1qMp46wE1n` 的官方播放器中通过原生设置选择 3x，实际 rate=3；评论滚动时视频不遮挡内容。横屏全屏保持比例，无悬浮按钮；真实 ADB 双击可暂停 / 继续。3x 播放时全屏控件隐藏的 1.6 秒内观察到内部 0 次 DOM 变化，显示后同步控件。
+- 真机完整组合运行 75 项，67 项通过、8 项失败，记录保留在 `artifacts/device-1.2.6-full-regression.txt`。针对失败项及个人页追加 10 项，9 项通过，见 `device-1.2.6-targeted-retest.txt`；最后的放大字幕全屏操作专项通过，见 `device-1.2.6-fullscreen-final.txt`。按方法去重，75 项全部取得通过结果；不声称同一次 75 项整组全通过。测试覆盖倍速、iframe / Shadow DOM、后台暂停、全屏 / 手势 / 音量 / 字幕、布局 / 评论 / 选集、个人页、更新校验和真实渲染进程恢复。
+- 上述失败的修复限于测试夹具：新页面用唯一标识等待，页面提交丢弃旧 JavaScript 回调时在原超时内重新查询；个人页夜间开关按实际初值检查并恢复；全屏触摸等待横屏和系统栏 resize 完成。新 Chromium 会先压缩 data URL 历史，历史回归按真实序列化体积判断保留或降级，仍检查保存状态上限、HTTPS 链接和倍速。生产代码及断言目标未为复测改变。
+- Android 16 窄屏组合 34 项中 33 项通过，新增的实际播放计时在模拟器 1x 测得 0.644x、未通过；对应真机九档计时全部通过。保留 `artifacts/emulator-1.2.6-narrow-final.txt`，不以模拟器计时失败代替实体手机结果。早期启动的模拟器出现 `System UI isn't responding` 拦截输入，记录为 `emulator-1.2.6-full-regression.txt` 和 `emulator-1.2.6-progress.png`；冷启动后完成上述窄屏检查。
+- 发布构建、Android lint（0 errors / 4 个原有 warnings）、JavaScript 语法和原签名 v2 校验通过。真机安装包拉取后的 SHA-256 与候选包一致：`2D95BF94CBD3B1534B969417ABFCCBFAA2CE9A029866AA08E4915353585DE6B1`，大小 1804962 字节，versionName 1.2.6 / code 10，minSdk26 / targetSdk36。归档为 `artifacts/tested-1.2.6/`。正式包将从提交后的同一源码构建，并独立核对提交记录和公开附件。
+
+每轮旧夹具运行前通过 DevicePreferencesProbe 在应用私有目录保存 playback / updates 全部偏好，结束后恢复并删除快照；保存与恢复专项均通过。未清理 Cookies，未卸载主应用。SettingsInstrumentationTest 自身也保存和恢复偏好。账号登录后的内容及会员字幕仍未使用真实账号验收。
+
 ## 1.2.5：热门、搜索、播放评论与实体手机适配
 
 验收日期：2026-10-10（北京时间）。实体设备为小米 9 SE / Android 15（API 35）/ WebView 153.0.8010.36 / 1080×2340 / density440；实际竖屏 WebView 约392×717 CSS px。另用 Android 16 / WebView 133 模拟器验证320px窄屏。

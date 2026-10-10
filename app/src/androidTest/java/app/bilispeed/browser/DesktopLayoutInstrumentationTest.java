@@ -191,7 +191,8 @@ public class DesktopLayoutInstrumentationTest {
         assertFalse((Boolean) js("document.documentElement.hasAttribute('data-bilispeed-touch')"));
         assertFalse((Boolean) js("/Android|Mobile/.test(navigator.userAgent)"));
         assertTrue((Boolean) js("innerWidth>=1000"));
-        instrumentation.runOnMainSync(() -> assertFalse(label(activity.getWindow().getDecorView(), "首页").isShown()));
+        instrumentation.runOnMainSync(() -> assertTrue("Settings navigation must remain reachable in desktop layout",
+                label(activity.getWindow().getDecorView(), "设置").isShown()));
         instrumentation.runOnMainSync(() -> activity.setTouchLayout(true));
         fixture(false);
         await("document.documentElement.hasAttribute('data-bilispeed-touch')");
@@ -220,7 +221,7 @@ public class DesktopLayoutInstrumentationTest {
         instrumentation.runOnMainSync(activity::showButtonAppearance);
         instrumentation.runOnMainSync(() -> {
             View panel = activity.appearanceDialogForTesting().getWindow().getDecorView();
-            for (String title : new String[]{"三点按钮", "倍速按钮", "字幕按钮"}) {
+            for (String title : new String[]{"字幕按钮"}) {
                 SeekBar size = slider(panel, title + "大小");
                 SeekBar opacity = slider(panel, title + "不透明度");
                 assertNotNull(size); assertNotNull(opacity);
@@ -247,19 +248,17 @@ public class DesktopLayoutInstrumentationTest {
             TextView menu = label(activity.getWindow().getDecorView(), "···");
             TextView speed = label(activity.getWindow().getDecorView(), "3.5x  倍速");
             assertNotNull(menu); assertNotNull(speed);
-            assertEquals(.5f, menu.getAlpha(), .001f); assertEquals(.5f, speed.getAlpha(), .001f);
-            float density = activity.getResources().getDisplayMetrics().density;
-            assertEquals(66 * density, menu.getWidth(), 2);
-            assertEquals(138 * density, speed.getWidth(), 2);
-            int[] location = new int[2]; speed.getLocationOnScreen(location);
-            assertTrue(location[0] + speed.getWidth() <= activity.getWindow().getDecorView().getWidth());
+            assertFalse("Legacy menu must remain hidden", menu.isShown());
+            assertFalse("Legacy speed button must remain hidden", speed.isShown());
+            TextView settings = label(activity.getWindow().getDecorView(), "设置");
+            assertNotNull(settings); assertTrue(settings.isShown());
         });
         instrumentation.runOnMainSync(activity::showButtonAppearance);
         instrumentation.runOnMainSync(() -> ((AlertDialog) activity.appearanceDialogForTesting())
                 .getButton(AlertDialog.BUTTON_NEUTRAL).performClick());
         await("getComputedStyle(document.querySelector('[data-bilispeed-control=subtitles]')).opacity==='1'");
         instrumentation.runOnMainSync(() -> {
-            for (String target : new String[]{"menu", "speed", "subtitle"}) {
+            for (String target : new String[]{"subtitle"}) {
                 assertEquals(100, instrumentation.getTargetContext().getSharedPreferences("playback", Context.MODE_PRIVATE).getInt(target + "_size", 0));
                 assertEquals(100, instrumentation.getTargetContext().getSharedPreferences("playback", Context.MODE_PRIVATE).getInt(target + "_opacity", 0));
             }

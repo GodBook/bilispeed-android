@@ -78,8 +78,9 @@ public class BrowserRecoveryInstrumentationTest {
     }
 
     private void fixture() throws Exception {
+        String identity = java.util.UUID.randomUUID().toString();
         String html = "<!doctype html><meta name='viewport' content='width=device-width'>"
-                + "<script>window.recoveryFixture=true;</script><div id='mirror-vdcon'><div class='left-container'>"
+                + "<script>window.recoveryFixture=true;window.recoveryIdentity='" + identity + "';</script><div id='mirror-vdcon'><div class='left-container'>"
                 + "<div id='playerWrap'><div id='bilibili-player'><video id='v' playsinline muted preload='auto' src='" + media + "'></video></div></div>"
                 + "<div class='video-toolbar-container'></div><div id='v_desc'>恢复测试</div></div></div>";
         instrumentation.runOnMainSync(() -> {
@@ -88,7 +89,11 @@ public class BrowserRecoveryInstrumentationTest {
         });
         long deadline = SystemClock.elapsedRealtime() + 20000;
         while (SystemClock.elapsedRealtime() < deadline) {
-            if (Boolean.TRUE.equals(js("Boolean(window.recoveryFixture && window.__BiliSpeed && window.__BiliTouchPlayer && document.getElementById('v').readyState>=2)"))) return;
+            try {
+                if (Boolean.TRUE.equals(js("Boolean(window.recoveryIdentity==='" + identity + "' && window.__BiliSpeed && window.__BiliTouchPlayer && document.getElementById('v').readyState>=2)"))) return;
+            } catch (AssertionError error) {
+                if (!"WebView did not respond".equals(error.getMessage())) throw error;
+            }
             SystemClock.sleep(100);
         }
         fail("Recovery fixture did not load");

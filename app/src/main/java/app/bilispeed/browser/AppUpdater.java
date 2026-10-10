@@ -87,7 +87,7 @@ final class AppUpdater {
     void toggleAutomatic() {
         boolean enabled = !automaticEnabled();
         preferences.edit().putBoolean("automatic", enabled).apply();
-        toast(enabled ? "启动时会检查更新，成功后间隔 24 小时" : "已关闭启动时检查，可在菜单手动检查");
+        toast(enabled ? "启动时会检查更新，成功后间隔 24 小时" : "已关闭启动时检查，可在设置中手动检查");
     }
 
     void onResume() {
@@ -98,7 +98,7 @@ final class AppUpdater {
             if (activity.getPackageManager().canRequestPackageInstalls() && pending != null) {
                 showRelease(pending);
             } else {
-                toast("尚未允许安装更新，可从菜单继续");
+                toast("尚未允许安装更新，可从设置继续");
             }
             return;
         }
@@ -152,7 +152,7 @@ final class AppUpdater {
                     } else if (available != null && resumed
                             && preferences.getInt("notified_code", 0) != release.versionCode) {
                         preferences.edit().putInt("notified_code", release.versionCode).apply();
-                        toast("发现新版本 " + release.versionName + "，可在菜单更新");
+                        toast("发现新版本 " + release.versionName + "，可在设置中更新");
                     }
                     manualCheck = false;
                 });
