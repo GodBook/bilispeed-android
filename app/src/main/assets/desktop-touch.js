@@ -13,6 +13,9 @@
     let previousPage = '';
     let hydrationStarted = 0;
     const managedDanmaku = new WeakSet();
+    const commentRoots = new Map();
+    const waitingCommentTags = new Set();
+    let commentTimer = null;
     const ownElements = '#bilispeed-touch-controls, #bilispeed-seek-feedback, #bilispeed-video-tabs, #bilispeed-touch-style, #bilispeed-player-style, #bilispeed-episodes-style, #bilispeed-episodes, [data-bilispeed-image], [data-bilispeed-danmaku-header]';
     const transientPlayerElements = '.bpx-player-dm-wrap, .bpx-player-dm-container, .bpx-player-subtitle-wrap';
     const observation = { childList: true, subtree: true, attributes: true, attributeFilter: ['content', 'data-server-rendered'] };
@@ -91,6 +94,14 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
     html[${attribute}] .bili-video-card { min-width: 0 !important; width: 100% !important; }
     html[${attribute}] .bili-video-card__info--tit { font-size: 14px !important; line-height: 20px !important; }
     html[${attribute}] .bili-video-card__info--bottom { font-size: 12px !important; }
+    html[${attribute}] .bili-video-card__stats { gap: 8px; font-size: 11px !important; }
+    html[${attribute}] .bili-video-card__stats--left { min-width: 0; overflow: hidden; }
+    html[${attribute}] .bili-video-card__stats--item { min-width: 0; white-space: nowrap; }
+    html[${attribute}] .bili-video-card__stats--item:nth-child(n + 2) { display: none !important; }
+    html[${attribute}] .bili-video-card__stats--icon { width: 14px !important; height: 14px !important; }
+    html[${attribute}] .bili-video-card__stats__duration {
+        flex: none; max-width: 48%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
     html[${attribute}] .feed-roll-btn { position: static !important; margin: 18px 0 !important; }
     html[${attribute}] .feed-roll-btn button { width: 100% !important; min-height: 44px; }
 
@@ -143,7 +154,14 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
     html[${attribute}] #mirror-vdcon .video-toolbar-right { display: none !important; }
     html[${attribute}] #mirror-vdcon .video-toolbar-left > * { min-height: 40px; margin-right: 8px !important; }
     html[${attribute}] #bilibili-player { width: 100% !important; height: 100% !important; }
-    html[${attribute}] .bpx-player-container:not(.bpx-state-fullscreen):not(.bpx-state-web) { width: 100% !important; height: 100% !important; }
+    /* The desktop player switches data-screen to mini when comments scroll into
+       view. 100% height on its fixed box means viewport height and obscures the
+       comments. Keep it in the reserved document slot outside real fullscreen. */
+    html[${attribute}]:not([data-bilispeed-fullscreen]) .bpx-player-container:not([data-screen="full"]):not([data-screen="web"]):not(.bpx-state-fullscreen):not(.bpx-state-web) {
+        position: relative !important; inset: auto !important; transform: none !important;
+        width: 100% !important; height: 100% !important; min-width: 0 !important; max-width: 100% !important;
+    }
+    html[${attribute}]:not([data-bilispeed-fullscreen]) .bpx-player-container[data-screen="mini"] :is(.bpx-player-mini-warp, .bpx-player-mini-wrap, .bpx-player-mini-close) { display: none !important; }
     html[${attribute}] .bpx-player-sending-bar { min-width: 0 !important; }
     html[${attribute}] .bpx-player-sending-bar { padding: 0 8px !important; box-sizing: border-box; }
     html[${attribute}] .bpx-player-sending-bar .bpx-player-video-info { display: none !important; }
@@ -221,9 +239,13 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
         display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
         width: 100% !important; margin: 0 !important; gap: 16px 10px !important;
     }
+    /* Current search uses Bootstrap-like percentage columns without the old
+       video-list-item class. Reset the grid children, not just the card inside. */
+    html[${attribute}] .search-layout .video-list > *,
     html[${attribute}] .search-layout .video-list-item {
         display: block !important; width: 100% !important; min-width: 0 !important;
-        max-width: none !important; padding: 0 !important;
+        max-width: 100% !important; padding: 0 !important; margin: 0 !important;
+        flex: none !important; box-sizing: border-box;
     }
     html[${attribute}] .search-layout .search-input { width: 100% !important; min-width: 0 !important; }
     html[${attribute}] .search-input-el { font-size: 16px !important; }
@@ -235,12 +257,33 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
     html[${attribute}] .popular-container .card-list { width: 100% !important; min-width: 0 !important; display: block !important; }
     html[${attribute}] .popular-container .nav-tabs { width: 100% !important; display: flex; overflow-x: auto; }
     html[${attribute}] .popular-container .nav-tabs > * { flex: none; min-width: 100px; }
-    html[${attribute}] .popular-container .video-card {
-        display: flex !important; width: 100% !important; min-width: 0 !important; margin: 0 0 16px !important; gap: 10px;
+    html[${attribute}][data-bilispeed-page="popular"] .popular-container .video-card {
+        display: flex !important; width: 100% !important; min-width: 0 !important; max-width: 100% !important;
+        height: auto !important; min-height: 96px; margin: 0 0 16px !important; gap: 10px; box-sizing: border-box;
     }
-    html[${attribute}] .popular-container .video-card__content { flex: 0 0 44%; width: 44% !important; height: auto !important; aspect-ratio: 16 / 9; }
+    html[${attribute}] .popular-container .video-card__content {
+        flex: 0 0 44%; width: 44% !important; height: auto !important; aspect-ratio: 16 / 9;
+        align-self: flex-start; margin: 0 !important;
+    }
     html[${attribute}] .popular-container .video-card__info { flex: 1; width: auto !important; min-width: 0 !important; padding: 0 !important; }
     html[${attribute}] .popular-container .video-card__info .video-name { font-size: 14px !important; line-height: 20px !important; }
+    html[${attribute}] .popular-container .video-stat { flex-wrap: wrap; gap: 4px 8px; }
+    html[${attribute}] .popular-container .nav-tabs { height: 68px !important; }
+    html[${attribute}] .popular-container .nav-tabs > .nav-tabs__item {
+        flex: 1 1 0; min-width: 0; margin: 0 !important; padding: 6px 2px !important; justify-content: center;
+    }
+    html[${attribute}] .popular-container .nav-tabs__item > div { flex-direction: column; gap: 4px; }
+    html[${attribute}] .popular-container .nav-tabs__item > div > img { width: 24px; height: 24px; margin: 0 !important; }
+    html[${attribute}] .popular-container .nav-tabs__item > div > span { font-size: clamp(11px, 3vw, 13px); white-space: nowrap; }
+    html[${attribute}] .popular-container .rank-list { display: block !important; }
+    html[${attribute}][data-bilispeed-page="popular"] .popular-container .rank-item { width: 100% !important; }
+    html[${attribute}] .popular-container .rank-item .content .img {
+        width: 44% !important; height: auto !important; aspect-ratio: 16 / 9; align-self: flex-start;
+    }
+    html[${attribute}] .popular-container .rank-item .content .info {
+        flex: 1; min-width: 0 !important; height: auto !important; min-height: 96px; padding: 0 !important;
+    }
+    html[${attribute}] .popular-container .rank-list.pgc-list .rank-item .content .img { width: 30% !important; aspect-ratio: 3 / 4; }
     html[${attribute}] .bili-dyn-home--member,
     html[${attribute}] .bili-dyn-home--visitor { display: block !important; width: 100% !important; min-width: 0 !important; padding: 12px !important; box-sizing: border-box; }
     html[${attribute}] .bili-dyn-home__left,
@@ -341,8 +384,100 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
     html[${attribute}] .login-pwd .form__item { display: flex !important; align-items: center; }
     html[${attribute}] .login-pwd .form__item input { flex: 1; width: 0 !important; min-width: 0; font-size: 16px; }
     html[${attribute}] .login-protocol { font-size: 12px; padding-top: 20px; }
+    /* The inline login dialog is a different component from passport's page. */
+    html[${attribute}] .bili-mini-mask .bili-mini-content-wp {
+        display: block !important;
+        width: calc(100vw - 24px) !important; max-width: 420px !important; min-width: 0 !important;
+        height: auto !important; min-height: 0 !important; max-height: calc(100dvh - 24px); overflow-y: auto; overflow-x: hidden;
+        padding: 48px 16px 20px !important; box-sizing: border-box; background-image: none !important;
+    }
+    html[${attribute}] .bili-mini-mask :is(.login-scan-wp, .bili-mini-line) { display: none !important; }
+    html[${attribute}] .bili-mini-mask :is(.bili-mini-login-right-wp, .login-pwd-wp, .tab__form, .login-tab-wp, .login-sns-wp, .login-agreement-wp) {
+        width: 100% !important; min-width: 0 !important; margin: 0 !important; box-sizing: border-box;
+    }
+    html[${attribute}] .bili-mini-mask .bili-mini-close-icon { top: 8px !important; right: 8px !important; }
+    html[${attribute}] .bili-mini-mask .bili-mini-customer-title {
+        position: absolute !important; top: 14px !important; left: 16px !important; right: 52px !important;
+        width: auto !important; height: auto !important; font-size: 16px !important; line-height: 24px !important;
+        text-align: left !important; white-space: normal;
+    }
+    html[${attribute}] .bili-mini-mask .login-tab-wp { display: flex !important; justify-content: center; white-space: nowrap; }
+    html[${attribute}] .bili-mini-mask .form__item { display: flex; width: 100% !important; box-sizing: border-box; }
+    html[${attribute}] .bili-mini-mask .form__item input { flex: 1; width: 0 !important; min-width: 0 !important; font-size: 16px; }
+    html[${attribute}] .bili-mini-mask .btn_wp { display: flex; gap: 8px; width: 100% !important; }
+    html[${attribute}] .bili-mini-mask .btn_wp > * { flex: 1; width: 0 !important; margin: 0 !important; }
+    html[${attribute}] .bili-mini-mask .login-agreement-wp {
+        position: static !important; inset: auto !important; transform: none !important;
+        padding-top: 16px !important; font-size: 12px;
+    }
 }
 `;
+
+    // The current official comments use nested Shadow DOM; document CSS cannot
+    // reach their desktop spacing or action row. Only style known components.
+    const commentStyles = {
+        'bili-comment-renderer': `
+            & #body { padding-left: 56px; }
+            & #user-avatar { left: 4px; width: 40px; height: 40px; }
+            & #user-avatar bili-avatar { --avatar-width: 40px !important; --avatar-height: 40px !important; }
+            & #main { min-width: 0; }
+            & #ornament { display: none; }`,
+        'bili-comment-replies-renderer': `& #expander { padding-left: 56px; }`,
+        'bili-comment-reply-renderer': `& #footer { padding-right: 0; }`,
+        'bili-comment-action-buttons-renderer': `
+            & { flex-wrap: wrap; gap: 2px 12px; }
+            & > :not(:first-child) { margin-left: 0; }
+            & #pubdate { flex-basis: 100%; white-space: nowrap; }
+            & :is(#like, #dislike, #reply) { flex: none; }
+            & button { white-space: nowrap; min-height: 36px; height: auto; }
+            & #more { margin-left: auto; margin-right: 0; height: 36px; }`,
+        'bili-comment-box': `
+            & #user-avatar { width: 48px; }
+            & #comment-area { flex: 1; width: calc(100% - 48px); min-width: 0; }
+            & #footer { flex-wrap: wrap; gap: 6px; }
+            & #optional { order: 5; flex-basis: 100%; }`
+    };
+
+    function scheduleComments() {
+        if (suspended || commentTimer !== null) return;
+        commentTimer = setTimeout(() => { commentTimer = null; commentLayout(); }, 100);
+    }
+
+    function commentLayout() {
+        if (suspended) return;
+        for (const [root, watcher] of commentRoots) {
+            if (!root.host.isConnected) { watcher.disconnect(); commentRoots.delete(root); }
+        }
+        function visit(element) {
+            const root = element.shadowRoot;
+            if (!root) {
+                if (!customElements.get(element.localName) && !waitingCommentTags.has(element.localName)) {
+                    waitingCommentTags.add(element.localName);
+                    customElements.whenDefined(element.localName).then(scheduleComments);
+                }
+                return;
+            }
+            const css = commentStyles[element.localName];
+            if (css && !root.getElementById('bilispeed-comment-style')) {
+                const style = document.createElement('style');
+                style.id = 'bilispeed-comment-style';
+                style.textContent = '@media (max-width: 1000px) {'
+                    + css.replaceAll('&', ':host-context(html[data-bilispeed-touch])') + '}';
+                root.appendChild(style);
+            }
+            if (!commentRoots.has(root)) {
+                const watcher = new MutationObserver(records => {
+                    if (records.some(record => [...record.addedNodes, ...record.removedNodes].some(node =>
+                        node.nodeType === 1 && (node.id !== 'bilispeed-comment-style' || !node.isConnected)))) scheduleComments();
+                });
+                watcher.observe(root, { childList: true, subtree: true });
+                commentRoots.set(root, watcher);
+            }
+            root.querySelectorAll('bili-comments-header-renderer, bili-comment-thread-renderer, bili-comment-renderer, '
+                + 'bili-comment-replies-renderer, bili-comment-reply-renderer, bili-comment-action-buttons-renderer, bili-comment-box').forEach(visit);
+        }
+        document.querySelectorAll('bili-comments').forEach(visit);
+    }
 
     function pageKind() {
         if (location.hostname === 'account.bilibili.com') return 'account';
@@ -500,7 +635,7 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
         // while the official page is still parsing and hydrating it.
         if (page === 'video' && isPageReady()) {
             if (window.__BiliTouchVideo) window.__BiliTouchVideo.refresh();
-            videoTabs(); danmakuSettings();
+            videoTabs(); danmakuSettings(); commentLayout();
         }
         if (window.__BiliTouchPlayer) window.__BiliTouchPlayer.refresh();
     }
@@ -528,6 +663,8 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
         clearTimeout(refreshTimer);
         refreshTimer = null;
         observer.disconnect();
+        clearTimeout(commentTimer); commentTimer = null;
+        commentRoots.forEach(watcher => watcher.disconnect()); commentRoots.clear();
         if (window.__BiliTouchVideo) window.__BiliTouchVideo.setSuspended(suspended);
         if (window.__BiliTouchPlayer) window.__BiliTouchPlayer.setSuspended(suspended);
         if (!suspended) { observer.observe(document, observation); refresh(); }

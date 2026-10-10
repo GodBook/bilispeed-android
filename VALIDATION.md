@@ -1,5 +1,23 @@
 # Android 16 验收记录
 
+## 1.2.5：热门、搜索、播放评论与实体手机适配
+
+验收日期：2026-10-10（北京时间）。实体设备为小米 9 SE / Android 15（API 35）/ WebView 153.0.8010.36 / 1080×2340 / density440；实际竖屏 WebView 约392×717 CSS px。另用 Android 16 / WebView 133 模拟器验证320px窄屏。
+
+- 在手机上的1.2.4基线复现搜索卡片被挤成28.84px、播放时查看评论被fixed小窗遮挡。修复后搜索卡片宽179.36px、热门列表宽368.73px，五个热门分类可见，排行榜单列、封面比例正常，播放量与长时长不再挤压。前后证据为 `artifacts/device-search-before.png`、`device-comments-before.png` 及对应 `device-*-native.png`。
+- 首页、搜索、综合热门、每周必看、入站必刷、排行榜、动态、我的、登录、竖屏视频、评论、内嵌登录、分P和合集共14个真实页面状态通过尺寸检查并经截图核对。每页结果为 `artifacts/device-*-result.json`，原生截图为 `device-*-native.png`。
+- 使用截图中的同一视频 `BV1qMp46wE1n`（柯洁围棋入门课2）验证播放中查看评论。视频readyState=4、paused=false，mini播放器保持在原页面位置并滚出视口，评论不被覆盖。Shadow DOM评论的日期、点赞与回复分行，新增内容和返回前台的夹具检查通过。
+- 登录弹窗标题、协议与表单完整留在屏内。键盘弹出后WebView高约400px，弹窗高367.45px，输入框与关闭按钮仍可见。UIAutomator验证浮钮在输入时隐藏、收起键盘后恢复。截图为 `artifacts/device-login-keyboard-native.png`。
+- 普通播放栏从132px降为88px，底部padding从误用的48px安全区恢复为4px；实际全屏继续避让系统边缘。原视频在横屏全屏中保持比例，真实ADB双击可继续播放和暂停，音量面板在屏内。原生倍速面板选择3x后视频rate=3，随后恢复原来的1x；未把这个检查当作逐档实际播放计时。
+- 手机真实点击分P第二集后，地址为 `BV17x411w7KC/?p=2`，官方cid=275431，高亮同步。150集合集真实点击后切换到 `BV1xXtTeZEVR`，cid=25861685381，高亮同步。一次早期点击被站方自动登录窗拦截，关闭提示后重新实际点击通过，没有绕过登录限制。
+- 最终发布构建、Android lint、JavaScript语法和原签名v2校验通过。lint为0 errors / 4个原有warnings。手机 `PhoneLayoutRegressionTest` 5项整组通过，见 `artifacts/device-final-regression.txt`。
+- 最终APK的320px组合回归运行39项，38通过、普通双击1项间歇超时，保留 `artifacts/phone-layout-320-final.txt`。双击夹具改为明确注入两次50ms接触、间隔100ms的时间戳后，普通/全屏双击专项2项通过，见 `artifacts/phone-layout-doubletap-fixed.txt`。按方法去重，最终APK的39项均取得通过结果；这是分阶段结果，不能称为同一次39项整组通过。断言未降低，生产双击识别逻辑未改动。
+- 早期模拟器38项检查中8项失败，原生截图显示 `System UI isn't responding` 弹窗拦截输入。关闭系统弹窗后，前一候选38项整组通过。早期失败保留在 `artifacts/phone-layout-320-systemui-failure.txt`、`emulator-player-failure.png`、`emulator-danmaku-failure.png`；前一候选通过记录为 `phone-layout-320-before-ime.txt`，不代替最终APK结果。
+
+发布前验证包：`artifacts/tested-1.2.5/BiliSpeed-1.2.5-Android16.apk`，versionName1.2.5 / versionCode9，1795346字节，minSdk26 / targetSdk36，关闭调试。SHA-256：324A8F9066FE5BE93F844EDEF766EBCBB5A3956804F13A0D2D0DF5D8E7882325。从手机拉取已安装APK后哈希完全一致；归档的update.json与校验和文件使用相同版本和哈希。GitHub正式发布附件与提交后构建的校验另行记录。
+
+范围限制：手机没有已登录账号。实际登录后的更多评论、历史、收藏及会员字幕未使用真实账号验收；个人页已登录、失效和网络失败由受控夹具覆盖。手机最初未联网，实站测试通过仅本机监听的USB HTTPS隧道使用电脑网络，TLS仍由官方服务器验证。CDP截图不包含Android硬件视频层，视频画面使用ADB screencap验收。收尾状态与复现命令见 [DEVICE-TESTING.md](DEVICE-TESTING.md)。
+
 ## 1.2.4：视频内容加载、分集切换与直接进入的「我的」页
 
 验收日期：2026-10-09。本轮「我的」采用参考图的头像资料、动态 / 关注 / 粉丝和四个常用入口，按追加要求移除大会员横幅。

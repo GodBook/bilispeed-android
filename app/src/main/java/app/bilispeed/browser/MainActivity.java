@@ -56,6 +56,7 @@ import androidx.webkit.JavaScriptReplyProxy;
 import androidx.webkit.ScriptHandler;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
+import androidx.core.view.WindowInsetsCompat;
 
 import org.json.JSONObject;
 
@@ -215,6 +216,11 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(Color.WHITE);
         setContentView(root);
         root.setOnApplyWindowInsetsListener((view, insets) -> {
+            boolean keyboardVisible = WindowInsetsCompat.toWindowInsetsCompat(insets, view)
+                    .isVisible(WindowInsetsCompat.Type.ime());
+            // Preserve the drag geometry while keeping playback buttons out of
+            // focused login/search forms. Back restores them with the keyboard.
+            if (floating != null) floating.setVisibility(keyboardVisible ? View.INVISIBLE : View.VISIBLE);
             if (Build.VERSION.SDK_INT >= 30) {
                 android.graphics.Insets safe = insets.getInsets(WindowInsets.Type.systemBars()
                         | WindowInsets.Type.displayCutout() | WindowInsets.Type.ime());

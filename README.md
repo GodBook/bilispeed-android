@@ -2,15 +2,17 @@
 
 面向 Android 16（API 36）的轻量 WebView 浏览器，启动默认打开 `https://www.bilibili.com/`。使用 B 站官方电脑端网页与播放器，默认提供适合手机的触屏布局和原生倍速浮动按钮。
 
-[下载最新 APK](https://github.com/GodBook/bilispeed-android/releases/latest) · [源码](https://github.com/GodBook/bilispeed-android)
+[下载已发布 APK](https://github.com/GodBook/bilispeed-android/releases/latest) · [源码](https://github.com/GodBook/bilispeed-android)
+
+当前版本为 **1.2.5 / versionCode 9**。修复搜索列表被挤成细列、播放时查看评论被桌面小窗遮挡、热门分类和排行榜适配、评论操作文字竖排、内嵌登录弹窗及播放栏底部安全区。真机检查记录与复现入口见 [DEVICE-TESTING.md](DEVICE-TESTING.md)，验证范围与正式发布校验见 [VALIDATION.md](VALIDATION.md)。
 
 ## 安装与使用
 
-在 [1.2.4 Releases](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.4) 下载 `BiliSpeed-1.2.4-Android16.apk`，传到手机后覆盖安装。如系统询问，允许当前文件管理器安装此 APK。无需 root，也不会替换官方 B 站 App。已有 1.1.x 或 1.2.x 可在应用内检查更新；已有 1.0.0 时先手动覆盖安装，即可获得在线更新入口。
+在 [1.2.5 Releases](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.5) 下载 `BiliSpeed-1.2.5-Android16.apk`，传到手机后覆盖安装。如系统询问，允许当前文件管理器安装此 APK。无需 root，也不会替换官方 B 站 App。已有 1.1.x 或 1.2.x 可在应用内检查更新；已有 1.0.0 时先手动覆盖安装，即可获得在线更新入口。
 
-1.2.4 使用原签名，可以覆盖安装旧版，保留设置与已有 Cookies。本机安装包位于 `artifacts/BiliSpeed-1.2.4-Android16.apk`。
+1.2.5 使用原签名，可以覆盖安装旧版，保留设置与已有 Cookies。本机安装包位于 `artifacts/BiliSpeed-1.2.5-Android16.apk`。
 
-本轮修复视频下方图片占位和分集切换，并将「我的」改成直接进入的手机个人页，采用头像、账号统计和四个常用入口的布局。大会员横幅已移除，账号资料读取当前官方登录状态；验收记录见 VALIDATION.md。
+本版在小米 9 SE 上检查了首页、热门分类、搜索、播放、评论、登录、动态、个人页、分 P 和合集等 14 个真实页面状态，并追加 Android 16 的 320px 窄屏回归。账号登录后的内容与会员字幕尚未使用真实账号验收，详细结果见 VALIDATION.md。
 
 - 点粉色「倍速」按钮选择 1x、1.25x、1.5x、2x、2.5x、3x、3.5x、4x、5x。
 - 滑杆支持 0.25–5x，步长 0.05；输入框支持两位小数，例如 2.75x。
@@ -116,17 +118,17 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-apk.ps1
 
 ## 发布后续更新
 
-1. 在 version.properties 递增 versionCode 并更新 versionName，例如 9 / 1.2.5。
+1. 在 version.properties 递增 versionCode 并更新 versionName，例如 10 / 1.2.6。
 2. 修改 release-notes.md，使用原来的 .signing 密钥构建并验证 APK。
 3. 提交已验证的源码，再从该提交重新构建正式 APK，确保包内的源码版本记录与发布标签一致。推送源码和标签后，发布三个 Release 附件：
 
 ~~~powershell
 .\scripts\build-apk.ps1 -RunTests -DeviceSerial emulator-5580
 git add .
-git commit -m "Release 1.2.5"
+git commit -m "Release 1.2.6"
 .\scripts\build-apk.ps1
-git tag v1.2.5
-git push origin main v1.2.5
+git tag v1.2.6
+git push origin main v1.2.6
 .\scripts\publish-release.ps1
 ~~~
 

@@ -42,7 +42,7 @@ html[data-bilispeed-touch] [data-bilispeed-player] .bpx-player-control-wrap { di
 html[data-bilispeed-touch] #bilispeed-touch-controls {
     display: grid; grid-template-columns: 44px minmax(0, 1fr) auto auto auto;
     align-items: center; gap: 0 2px; position: absolute; bottom: 0; left: 0; right: 0; z-index: 100;
-    box-sizing: border-box; padding: 12px max(8px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    box-sizing: border-box; padding: 12px 8px 4px;
     color: #fff; background: linear-gradient(transparent, rgba(0, 0, 0, .8));
     font: 12px sans-serif; opacity: 1; visibility: visible; transition: opacity .18s;
 }
@@ -95,6 +95,9 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] .bpx-player-sending-area,
 html[data-bilispeed-touch][data-bilispeed-fullscreen] .bpx-player-sending-bar { display: none !important; }
 html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilispeed-player-panel {
     bottom: calc(100% + 4px); max-height: min(260px, calc(var(--bilispeed-player-height, 100vh) - var(--bilispeed-controls-height, 84px) - 16px));
+}
+html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilispeed-touch-controls {
+    padding: 12px max(8px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
 }
 html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player,
 html[data-bilispeed-touch] .bpx-player-container:fullscreen,

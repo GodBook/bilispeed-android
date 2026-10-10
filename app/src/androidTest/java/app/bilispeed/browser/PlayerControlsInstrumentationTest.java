@@ -229,12 +229,15 @@ public class PlayerControlsInstrumentationTest {
 
     private void doubleTap() throws Exception {
         float[] location = point(HOST, .5, .3);
+        // Describe two 50ms contacts 100ms apart, independently of how long the
+        // test thread is descheduled while the emulator decodes video.
+        long sequenceStart = SystemClock.uptimeMillis();
         for (int tap = 0; tap < 2; tap++) {
-            long start = SystemClock.uptimeMillis();
+            long start = sequenceStart + tap * 100;
             MotionEvent down = fingerInput(start, start, MotionEvent.ACTION_DOWN, location[0], location[1]);
             assertTrue(instrumentation.getUiAutomation().injectInputEvent(down, false)); down.recycle();
             SystemClock.sleep(50);
-            MotionEvent up = fingerInput(start, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, location[0], location[1]);
+            MotionEvent up = fingerInput(start, start + 50, MotionEvent.ACTION_UP, location[0], location[1]);
             assertTrue(instrumentation.getUiAutomation().injectInputEvent(up, false)); up.recycle();
             SystemClock.sleep(50);
         }
