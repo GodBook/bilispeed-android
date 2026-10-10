@@ -18,7 +18,9 @@
 - 候选 1813362 字节，SHA-256 `7CBA4F46011ED08E9F1418E8C21A09F9FB051DDDDA1CAAC9DB672965EDBF8031`；已从手机拉取 `device-1.2.8-final-installed.apk`，与电脑候选完全一致，候选和元数据归档于 `artifacts/tested-1.2.8/`。
 - 真实页面检查前后恢复原偏好成功，最终记录 `device-1.2.8-restored-final.txt`，快照已自动删除。临时调试会话结束、tcp9222 已移除，休眠超时恢复原值 600000；保留原 Wi-Fi 与无线 ADB。
 
-待发布：从已验证源码提交重构正式包，核对与候选的 ZIP 差异仅 Git 版本记录，再推送标签与三个 Release 附件并安装手机。
+正式发布：[v1.2.8](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.8)。源码/标签为 `9b6f8f5fdc862f9759db53c7f540fefcd9ff7734`，正式 APK 1813362 字节，SHA-256 `C1E8C196C6E4CAED697C7F12FD88630BB73DB9E0E0D7CB45978CF1400A1F00D0`。从提交重构并通过 lint/签名检查；与候选的 76 个 ZIP 条目逐项比对，仅 `META-INF/version-control-info.textproto` 不同，包内提交号与标签一致，代码和资源相同。
+
+三个正式附件齐全，GitHub APK 摘要、匿名 `releases/latest/download/update.json`、公开 APK 下载和 SHA256SUMS 全部核对一致；`published-1.2.8-*` 为电脑匿名下载证据。正式 APK 使用原签名覆盖安装手机后，拉取 `device-1.2.8-published-installed.apk` 再核对完全一致。测试 runner 已卸载，正式包无 DEBUGGABLE 标志，当前应用 WebView 调试 socket 为 0，ADB 转发为 0，休眠超时恢复 600000。原生设置确认恢复原倍速 1x、记住倍速和触屏布局开启，见 `device-1.2.8-published-settings.png`。保留已有 Cookies、原 Wi-Fi 与无线 ADB，手机停留在正式版设置页。
 
 保留失败记录：首轮播放器/分集 30 项为 25 通过（`device-1.2.8-targeted-build.txt`），因新增隐藏项和合集标识需调整原断言；可见项几何断言提高到 44px。第一轮完整 92 项为 91 通过（`device-1.2.8-full-regression.txt`），连续 fixture 切文档时 evaluateJavascript 回调丢失，已加测试专用 load 提交通知。候选 0FBE84D9 的 93 项为 92 通过（`final-93-regression.txt`），系统返回退出全屏后控件未显示；已去除倍速 config 的全屏字段，使用原生通知与每页加载同步，最终 93 项整组通过。实站初次检查受到旋转夹具留下的电脑布局和 smooth scroll 影响，已先恢复原设置并瞬时定位；另有一次 CDP 换页期间 execution context 消失，检查脚本仅对导航上下文错误做有界重试，最终 12 状态均通过，业务断言未降低。
 

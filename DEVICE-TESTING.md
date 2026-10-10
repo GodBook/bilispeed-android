@@ -8,7 +8,9 @@
 
 当前状态：最终候选 7CBA4F46011ED08E9F1418E8C21A09F9FB051DDDDA1CAAC9DB672965EDBF8031 / 1813362 字节已取得完整 93 项通过（355.339 秒，release-93-regression.txt）、同机 320px 的 14 项通过（37.36 秒，release-320.txt）及实站 12 状态全部通过。播放器 20 项专项亦通过（104.2 秒，controls-release.txt）。手机拉取包 final-installed.apk 与候选一致，候选已归档 artifacts/tested-1.2.8。没有待修复或待复测的生产代码。
 
-实站证据：device-1.2.8-verified-course.txt（7）、verified-boundaries.txt（3）、verified-single.txt（2）；最终 JSON 和原生截图统一前缀 device-1.2.8-final-。原偏好恢复成功（restored-final.txt），快照已自动删除，screen_off_timeout 恢复 600000；检查会话均结束，tcp9222 已移除。待提交已验证源码、从提交重构正式 APK、比较 ZIP 条目仅 Git 记录变化、推送源码/标签并发布三个附件；最后安装正式包并卸载测试 runner。
+实站证据：device-1.2.8-verified-course.txt（7）、verified-boundaries.txt（3）、verified-single.txt（2）；最终 JSON 和原生截图统一前缀 device-1.2.8-final-。原偏好恢复成功（restored-final.txt），快照已自动删除，screen_off_timeout 恢复 600000；检查会话均结束，tcp9222 已移除。
+
+发布完成：[v1.2.8](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.8)，源码/标签 9b6f8f5fdc862f9759db53c7f540fefcd9ff7734。正式包 C1E8C196C6E4CAED697C7F12FD88630BB73DB9E0E0D7CB45978CF1400A1F00D0 / 1813362 字节；76 个 ZIP 条目仅 META-INF/version-control-info.textproto 与实测候选不同。三个正式 Release 附件、匿名 latest 元数据、公开 APK 下载和 SHA256SUMS 均核对一致。正式 APK 已覆盖安装手机，拉取 published-installed.apk 核对一致；测试 runner 已卸载，DEBUGGABLE 标志不存在，当前应用 WebView 调试 socket 为 0、端口转发为 0。原生设置确认原倍速 1x、记住倍速和触屏布局均已恢复开启；手机停留在正式版设置页，截图 published-settings.png。验收后的文档记录另随 main 同步，不移动发布标签。
 
 前一候选 0FBE84D904232906B746F8CC26C47B5C26F0AF77F4BB9B7B2BFCF0259E573F94 虽取得 320px 的 14 项和实站 12 状态通过，完整 93 项有 1 项在系统返回退出全屏后未显示控件，因此已淘汰。现已将全屏状态同步限定为原生进出通知与新页面加载完成，移除倍速 config 中可能迟到的全屏字段；新增回归拒绝旧倍速配置恢复全屏，最终整组已通过。
 
