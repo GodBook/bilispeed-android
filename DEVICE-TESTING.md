@@ -2,7 +2,7 @@
 
 当前任务：修复热门、搜索及播放时查看评论的显示异常，在连接的手机上逐页检查适配。完整验收证据以 [VALIDATION.md](VALIDATION.md) 的1.2.5节为准。
 
-工作位置：本项目 main，起点0090a22（1.2.4），开始时工作区干净。本轮修复与实测已完成；后续正式发布的源码标签、附件与更新渠道校验记录见 [VALIDATION.md](VALIDATION.md)。
+工作位置：本项目 main，起点0090a22（1.2.4），开始时工作区干净。本轮修复与实测已提交并发布为 [v1.2.5](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.5)；源码标签、三个附件与公开更新渠道校验记录见 [VALIDATION.md](VALIDATION.md)。
 
 当前状态：修复、实际可访问界面验收及测试环境清理已完成。发布前验证APK已安装手机，SHA-256为324A8F9066FE5BE93F844EDEF766EBCBB5A3956804F13A0D2D0DF5D8E7882325，归档在 artifacts/tested-1.2.5/BiliSpeed-1.2.5-Android16.apk。正式包从提交后的同一源码重新构建，包内Git记录与正式发布的对应关系另见验收记录。没有未编译的生产代码或待处理的实测显示问题。
 

@@ -18,6 +18,14 @@
 
 范围限制：手机没有已登录账号。实际登录后的更多评论、历史、收藏及会员字幕未使用真实账号验收；个人页已登录、失效和网络失败由受控夹具覆盖。手机最初未联网，实站测试通过仅本机监听的USB HTTPS隧道使用电脑网络，TLS仍由官方服务器验证。CDP截图不包含Android硬件视频层，视频画面使用ADB screencap验收。收尾状态与复现命令见 [DEVICE-TESTING.md](DEVICE-TESTING.md)。
 
+正式发布与附件验证（2026-10-10）：
+
+- [v1.2.5 Release](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.5) 于北京时间 12:29:47 发布为最新正式版本，非草稿、非预发布。源码标签与包内提交记录均为 4ac76eb42d34045c9b5a9ab76991fefd6e0b92d1，已推送至 GitHub。
+- 从已提交源码重新执行 assembleRelease 和 lintRelease 通过，正式 APK 为 1795346 字节，SHA-256：07CDFE10301CF75A92CA246A76964E7796AE9CFA2BC0F42942C01E5DA2EEBB98。APK Signature Scheme v2 校验通过，原证书 SHA-256 为 e2d8ed51e71288c8f2a0ea81e3f7ac23aba499d59ed6d7eace205e78960f94b3。
+- 对比真机验证包的 76 个解包条目，仅 META-INF/version-control-info.textproto 的 Git 提交记录变化；应用代码、资源和脚本完全一致。没有因重新构建而重复计入界面测试结果。
+- 正式附件齐全：BiliSpeed-1.2.5-Android16.apk、update.json 与 SHA256SUMS.txt。全部重新下载后，文件大小、SHA-256、本机原文件与 GitHub 附件摘要均匹配，发布说明与 release-notes.md 一致。update.json 为 1498 字节、SHA-256：A03DE88051D5665852899DE7D6C61B35A7C250DC7025DF2E2E224C0768F212B1；SHA256SUMS.txt 为 97 字节、SHA-256：D12742D7DB1385E4E52D198B51243E14B20F932A645020E6D988F2383F05F0C9。下载保存在 artifacts/release-verify-1.2.5/。
+- 未使用 GitHub 登录凭据请求应用实际使用的 https://github.com/GodBook/bilispeed-android/releases/latest/download/update.json，确认返回 1.2.5 / code 9，内容与正式附件一致。再从其中的公开 APK 地址下载，大小、哈希、原签名与 v2 校验全部通过，下载保存在 artifacts/public-update-verify-1.2.5/。发布后渠道检查在主机完成，没有另行重跑 Android 下载 instrumentation；上方记录的真实账号与计时验证限制仍保留。
+
 ## 1.2.4：视频内容加载、分集切换与直接进入的「我的」页
 
 验收日期：2026-10-09。本轮「我的」采用参考图的头像资料、动态 / 关注 / 粉丝和四个常用入口，按追加要求移除大会员横幅。
