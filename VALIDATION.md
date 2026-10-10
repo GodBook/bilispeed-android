@@ -11,9 +11,18 @@
 - 真机完整组合运行 75 项，67 项通过、8 项失败，记录保留在 `artifacts/device-1.2.6-full-regression.txt`。针对失败项及个人页追加 10 项，9 项通过，见 `device-1.2.6-targeted-retest.txt`；最后的放大字幕全屏操作专项通过，见 `device-1.2.6-fullscreen-final.txt`。按方法去重，75 项全部取得通过结果；不声称同一次 75 项整组全通过。测试覆盖倍速、iframe / Shadow DOM、后台暂停、全屏 / 手势 / 音量 / 字幕、布局 / 评论 / 选集、个人页、更新校验和真实渲染进程恢复。
 - 上述失败的修复限于测试夹具：新页面用唯一标识等待，页面提交丢弃旧 JavaScript 回调时在原超时内重新查询；个人页夜间开关按实际初值检查并恢复；全屏触摸等待横屏和系统栏 resize 完成。新 Chromium 会先压缩 data URL 历史，历史回归按真实序列化体积判断保留或降级，仍检查保存状态上限、HTTPS 链接和倍速。生产代码及断言目标未为复测改变。
 - Android 16 窄屏组合 34 项中 33 项通过，新增的实际播放计时在模拟器 1x 测得 0.644x、未通过；对应真机九档计时全部通过。保留 `artifacts/emulator-1.2.6-narrow-final.txt`，不以模拟器计时失败代替实体手机结果。早期启动的模拟器出现 `System UI isn't responding` 拦截输入，记录为 `emulator-1.2.6-full-regression.txt` 和 `emulator-1.2.6-progress.png`；冷启动后完成上述窄屏检查。
-- 发布构建、Android lint（0 errors / 4 个原有 warnings）、JavaScript 语法和原签名 v2 校验通过。真机安装包拉取后的 SHA-256 与候选包一致：`2D95BF94CBD3B1534B969417ABFCCBFAA2CE9A029866AA08E4915353585DE6B1`，大小 1804962 字节，versionName 1.2.6 / code 10，minSdk26 / targetSdk36。归档为 `artifacts/tested-1.2.6/`。正式包将从提交后的同一源码构建，并独立核对提交记录和公开附件。
+- 发布构建、Android lint（0 errors / 4 个原有 warnings）、JavaScript 语法和原签名 v2 校验通过。真机安装包拉取后的 SHA-256 与候选包一致：`2D95BF94CBD3B1534B969417ABFCCBFAA2CE9A029866AA08E4915353585DE6B1`，大小 1804962 字节，versionName 1.2.6 / code 10，minSdk26 / targetSdk36。归档为 `artifacts/tested-1.2.6/`。正式包已从提交后的同一源码构建，提交记录和公开附件的独立校验见下。
 
 每轮旧夹具运行前通过 DevicePreferencesProbe 在应用私有目录保存 playback / updates 全部偏好，结束后恢复并删除快照；保存与恢复专项均通过。未清理 Cookies，未卸载主应用。SettingsInstrumentationTest 自身也保存和恢复偏好。账号登录后的内容及会员字幕仍未使用真实账号验收。
+
+正式发布与附件验证（2026-10-10）：
+
+- [v1.2.6 Release](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.6) 于北京时间 13:37:51 发布为最新正式版本，非草稿、非预发布。已推送的源码标签与 APK 内提交记录均为 `fcaf0f7d70ec48780536b46aac237cb1dbe25457`。
+- 提交后重新构建及 lint 通过。正式 APK 为 1804962 字节，SHA-256：`E0C8FCECB63491280D5B28DEA587A580735F135F472A4AAB5E14B6756D5001D3`，版本 1.2.6 / code10，minSdk26 / targetSdk36，关闭调试。v2 签名验证通过，原证书 SHA-256：`e2d8ed51e71288c8f2a0ea81e3f7ac23aba499d59ed6d7eace205e78960f94b3`。
+- 对比候选包的 76 个解包条目，仅 `META-INF/version-control-info.textproto` 的 Git 记录变化；代码、资源和脚本完全一致。对照记录为 `artifacts/release-1.2.6-content-comparison.json`，未把重新构建当作又一轮界面测试。
+- 三个附件全部重新下载，SHA-256、大小、GitHub 附件摘要与本机文件一致；发布说明与 release-notes.md 完全一致。update.json 为1561字节、SHA-256：`2C7BD71A13375C9986D8F981BF8F5C8DDDBCD1AAFA3D6F25BA91BB104F4611D0`；SHA256SUMS.txt 为97字节、SHA-256：`0FEC16A164D83AE6ED1D10855DD30BF195C638C512814DD911710FC28BC58600`。下载和元数据保存在 `artifacts/release-verify-1.2.6/` 与 `release-1.2.6-github-metadata.json`。
+- 电脑不携带 GitHub 登录凭据访问 `https://github.com/GodBook/bilispeed-android/releases/latest/download/update.json`，返回1.2.6 / code10 / 正式包相同哈希。手机现有 Wi-Fi 直连 GitHub 的额外 PublishedUpdateSmokeTest 在读取响应时超时，保留 `artifacts/device-1.2.6-published-update-check.txt`；没有声称该网络下手机在线下载通过。应用在线更新仍要求手机能够访问 GitHub。
+- 手机已原签名覆盖安装正式包，重新拉取的已安装 APK 与正式附件哈希一致；实际设置页高亮1x和底部设置入口，最终截图为 `artifacts/device-1.2.6-final-settings-native.png`。测试 runner 已卸载，无 WebView 调试 socket 或本轮 ADB 转发；休眠超时恢复原值600000，保留原无线调试与 Wi-Fi。模拟器尺寸恢复720×1600后关闭。
 
 ## 1.2.5：热门、搜索、播放评论与实体手机适配
 

@@ -2,9 +2,9 @@
 
 任务：隐藏三点和倍速浮钮，在底部「我的」右侧新增设置，整合倍速与浏览选项，削减重复脚本工作；真机通过后更新 GitHub 与 Release。
 
-工作位置：本项目 main，起点 16b9183（1.2.5），开始时工作区干净。生产实现与实体手机验收已完成，正在整理正式发布；最终附件与更新渠道结果见 VALIDATION.md 的 1.2.6 节。
+工作位置：本项目 main，起点 16b9183（1.2.5），开始时工作区干净。生产实现、实体手机验收与 [1.2.6 正式发布](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.6) 已完成；源码标签为 fcaf0f7。最终附件与公开更新渠道结果见 VALIDATION.md 的 1.2.6 节。
 
-设备：无线 ADB 10.93.192.96:5555，小米 9 SE / Android15 API35 / WebView153.0.8010.36 / 1080×2340 / density440。本轮使用手机已有 Wi-Fi，无需网络代理。测试时临时把 screen_off_timeout 从600000调至1800000，收尾恢复600000；保留无线调试连接。
+设备：无线 ADB 10.93.192.96:5555，小米 9 SE / Android15 API35 / WebView153.0.8010.36 / 1080×2340 / density440。本轮使用手机已有 Wi-Fi，无需网络代理。测试时临时把 screen_off_timeout 从600000调至1800000，收尾已恢复600000；保留无线调试连接。
 
 证据：`artifacts/device-1.2.6-full-regression.txt`（75项组合67通过）、`device-1.2.6-targeted-retest.txt`（10项9通过）、`device-1.2.6-fullscreen-final.txt`（余下1项通过），按方法去重75项均取得通过结果。新设置5项及九档真实播放计时在真机通过。扫描对照为 `device-performance-1.2.5-baseline.json` 与 `device-performance-1.2.6.json`。完整范围、失败原因及模拟器计时限制见 VALIDATION.md。
 
@@ -17,6 +17,8 @@ adb -s <serial> shell am instrument -w -r -e class app.bilispeed.browser.DeviceP
 ```
 
 快照位于应用私有 files/device-test-preferences.json，不包含 Cookies；恢复成功后自动删除，存在旧快照时拒绝覆盖。真实页面检查使用 DeviceUiInspectionTest 临时开启调试、ADB forward tcp:9222，以及 `BILISPEED_EVIDENCE_PREFIX=1.2.6-` 的 device-ui-smoke.mjs；不覆写上一版的界面证据。停止会话后移除转发并卸载一次性测试 runner，主应用继续保留。
+
+本轮收尾已完成：偏好快照均恢复并删除，实际倍速恢复1x；正式包已覆盖安装到手机，哈希与 Release 附件一致。runner 已卸载，临时调试与端口转发已关闭，模拟器恢复原尺寸后结束。手机停留在新版设置页。电脑匿名访问公开更新渠道通过；额外的手机在线更新检查直连 GitHub 超时，作为网络限制保留记录。
 
 # 2026-10-10 1.2.5 真机适配修复检查点（历史）
 
