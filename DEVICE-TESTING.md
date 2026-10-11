@@ -2,6 +2,8 @@
 
 本页保留PLAN-1.3.0.md的复现入口；当前状态见EXECUTION-1.3.0.md，版本化结果及发布核验见VALIDATION.md。构建成功与正式发布分别记录。
 
+1.3.0已正式发布并将匿名下载的APK覆盖安装手机，原签名/公开摘要/实际安装包哈希一致；临时测试组件与调试通道已清理，原设置恢复。完整证据及电脑Temp副本保留原因见VALIDATION.md。
+
 环境：Java D:/ssoftware/JAVA24，Android SDK D:/dev/android-sdk，GRADLE_USER_HOME=C:/Users/awxds/.gradle-desktile。手机10.93.192.96:5555，模拟器emulator-5580。
 
 ```powershell

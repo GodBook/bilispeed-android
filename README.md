@@ -4,7 +4,7 @@
 
 [下载已发布 APK](https://github.com/GodBook/bilispeed-android/releases/latest) · [源码](https://github.com/GodBook/bilispeed-android)
 
-当前版本为 **1.3.0 / versionCode 15**。统一浅色、深色与跟随系统主题，保留列表浏览位置，增加触屏画质入口，修正首页卡片的分段空白。沿用五项底部导航、顶部搜索、列表下拉刷新和全屏连续切集。实机与Android16模拟器各完整120项通过，连续20轮、官网40状态和6个深色页面通过；验证范围及正式附件记录见 [VALIDATION.md](VALIDATION.md)，执行检查点见 [EXECUTION-1.3.0.md](EXECUTION-1.3.0.md)。
+当前正式版本为 **[1.3.0 / versionCode 15](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.0)**，公开APK已覆盖安装连接手机并核对哈希。统一浅色、深色与跟随系统主题，保留列表浏览位置，增加触屏画质入口，修正首页卡片的分段空白。沿用五项底部导航、顶部搜索、列表下拉刷新和全屏连续切集。实机与Android16模拟器各完整120项通过，连续20轮、官网40状态和6个深色页面通过；验证范围、内存测量限制及正式附件记录见 [VALIDATION.md](VALIDATION.md)，执行检查点见 [EXECUTION-1.3.0.md](EXECUTION-1.3.0.md)。
 
 ## 安装与使用
 

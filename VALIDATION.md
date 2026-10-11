@@ -1,10 +1,10 @@
 # Android 16 验收记录
 
-## 1.3.0：导航保位、触屏画质与统一主题（候选验收通过，公开包待核验）
+## 1.3.0：导航保位、触屏画质与统一主题（已发布并回装公开正式包）
 
 验收日期：2026-10-11（北京时间）。需求见[PLAN-1.3.0.md](PLAN-1.3.0.md)，恢复状态见[EXECUTION-1.3.0.md](EXECUTION-1.3.0.md)。实机为小米9 SE / Android15 API35 / WebView153 / 1080×2340 / density440；Android16 API36使用模拟器，沿用600×1400/density300覆盖值，不当作Android16实体机。
 
-最终测试APK **1.3.0/code15，1834060字节，SHA256 C7C25A38614E7F8E2FC77B91E159DA15CCC9EDB4A19D40FEDE8E8B8A4181934C**，保存在artifacts/tested-1.3.0-final。27个生产/构建文件指纹见device-1.3.0-source-sha256.json。正式提交后还需重建、逐ZIP条目比较、发布及公开下载/回装核验。
+最终测试APK **1.3.0/code15，1834060字节，SHA256 C7C25A38614E7F8E2FC77B91E159DA15CCC9EDB4A19D40FEDE8E8B8A4181934C**，保存在artifacts/tested-1.3.0-final。27个生产/构建文件指纹见device-1.3.0-source-sha256.json。正式提交后重建的1834132字节APK已逐ZIP条目比较、公开发布、匿名下载并回装核验，详见下方发布记录。
 
 | 检查 | 结果 | 主要证据 |
 | --- | --- | --- |
@@ -47,7 +47,13 @@
 
 字体1.0/1.3/1.5各2项、实际系统night切换原生弹窗、TalkBack原生设置/倍速/主题/My路径在本版较早候选验证；相关功能随后有最终核心回归覆盖。网页触摸探索未取得可靠证据，不声称全网页TalkBack验收。原签名升级保留数据，合成Cookie已移除，主应用未卸载/清数据。
 
-当前所有检查会话结束，原偏好、timeout600000、rotation1/0及font_scale1.0恢复，My原夜间false已验证恢复；9222转发为0。正式提交、Release三附件/latest/公开包安装与最终清理尚待执行，结果将在下方补记。
+正式发布：[v1.3.0](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.0)，源码/标签指向 **0d1b4f79521aaac5c29c3ac9c8592530a37c1a09**。原签名重建的正式APK为 **1834132字节 / SHA256 B8BAE355F995AF81CAC2C3ECA66B228B281DC6AD0ABDA7F862D4D077E45DA8EA**；与测试包78个ZIP条目相比，仅META-INF/version-control-info.textproto不同（device-1.3.0-release-zip-diff.txt）。证书SHA256沿用E2D8ED51E71288C8F2A0EA81E3F7AC23ABA499D59ED6D7EACE205E78960F94B3。
+
+三个Release附件的GitHub摘要、匿名下载、latest/download/update.json、大小和原签名均核对通过，记录public-verification.json/txt，公开文件保存在artifacts/published-1.3.0。公开APK已覆盖安装小米9 SE，重新拉取installed.apk与上述B8BAE…哈希完全一致（public-installation.json）。未卸载或清除主应用数据。
+
+最终正式首页与设置已目视核对（published-home/settings.png），原1x选中态在原生XML再次确认。手机曾熄屏但未锁定，唤醒后完成界面核对。原偏好、timeout600000、rotation1/0、font_scale1.0和My原夜间false已恢复；正式应用无DEBUGGABLE，调试socket=0、9222转发=0，手机/模拟器测试runner均卸载，可由构建脚本重新安装。final-cleanup.json记录最终状态。此处验证公开更新渠道和安装包，没有称为手机内完整在线下载安装流程。最终验收文档另提交main，不移动发布标签。
+
+电脑Temp目录bilispeed-published-1.3.0-2092e894f4cb4871a2ded0a936956d7b内的4个APK/截图副本保留；自动审批审核拒绝删除，仅返回“blocked by policy”，没有提供更具体原因。经核验的正式文件和截图也已保存artifacts，未将临时目录清理写为完成。
 
 ## 1.2.10：首页下拉刷新、五项导航与轮播精简
 

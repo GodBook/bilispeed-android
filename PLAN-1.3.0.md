@@ -2,6 +2,8 @@
 
 编写日期：2026-10-11。当前基线：1.2.10 / versionCode 14，发布源码 `cc35dff`，验收记录提交 `9076ccc`。本文记录用户批准的开发计划；实施进度见 [EXECUTION-1.3.0.md](EXECUTION-1.3.0.md)，验收证据见 [VALIDATION.md](VALIDATION.md)。
 
+完成状态：本计划P0/P1已实施并完成实机验收，[1.3.0正式Release](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.0)已发布、公开包已回装核对。P2仍为后续候选；32位WebView长时内存占用的测量边界见VALIDATION.md。
+
 ## 1. 版本目标与建议范围
 
 1.3.0 重点改善连续浏览和日常播放：列表更紧凑，返回时保留浏览位置，手机直接调画质，夜间使用时整个应用保持一致。
