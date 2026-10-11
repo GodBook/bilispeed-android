@@ -1,4 +1,42 @@
-# 2026-10-11 1.2.10 首页优化检查点
+# 2026-10-11 1.3.0 测试入口
+
+本页保留PLAN-1.3.0.md的复现入口；当前状态见EXECUTION-1.3.0.md，版本化结果及发布核验见VALIDATION.md。构建成功与正式发布分别记录。
+
+环境：Java D:/ssoftware/JAVA24，Android SDK D:/dev/android-sdk，GRADLE_USER_HOME=C:/Users/awxds/.gradle-desktile。手机10.93.192.96:5555，模拟器emulator-5580。
+
+```powershell
+$env:JAVA_HOME='D:\ssoftware\JAVA24'
+$env:GRADLE_USER_HOME='C:\Users\awxds\.gradle-desktile'
+.\scripts\build-apk.ps1 -AndroidSdk D:\dev\android-sdk -DeviceSerial '10.93.192.96:5555' -RunTests -TestLogName device-1.3.0-release-regression.txt
+```
+
+默认核心集合120项。设备会话先检查在线、解锁、网络、版本与实体机电量，低于10%且未接电时停止连续测试；恢复上次未完成的快照，再保存原偏好与休眠/旋转/字体设置，结束或异常finally恢复。主应用不卸载、不清数据，测试runner可替换。用独立TestLogName保留每轮证据，避免两设备写同一日志。FontScale参数支持1.0/1.3/1.5；TestFilter可选择专项。
+
+真实TalkBack专项只在已安装其服务的模拟器显式运行：
+
+```powershell
+.\scripts\build-apk.ps1 -AndroidSdk D:\dev\android-sdk -DeviceSerial emulator-5580 -TestFilter 'app.bilispeed.browser.TalkBackSmokeTest#talkBackCanNavigateSettingsChooseRateAndChangeTheme' -TestLogName emulator-1.3.0-talkback-native.txt
+```
+
+该专项持久化保存/恢复secure无障碍设置；若上次异常留下备份，先执行TalkBackSmokeTest#restoreInterruptedSettings。默认指触集合不与TalkBack同时运行。实际覆盖原生设置/倍速/主题/导航，网页触摸探索另行核验。
+
+性能入口为scripts/run-device-benchmark.ps1，配对安装正式1.2.10源码重建的同签名code15测试基线和1.3.0，分别记录20冷/20热启动及20官网旅程。基线只是解决实体机不允许降versionCode的问题，不能发布或留在手机。SkipLaunch仅复用已完成同label的20次启动记录。原始数据、失败轮次和测量边界见VALIDATION；不将ADB/CDP壁钟时间当作帧率或续航。
+
+最终C7C25A…包手机完整120/120（466.438s）、Android16模拟器完整120/120（351.779s）、连续20轮、20冷/20热、官网40状态和6个深色页面均通过。此前候选、模拟器夹具等待及官网合集超时均保留原始失败记录；最终结果与对应文件见VALIDATION.md，不拼接失败或诊断轮次。
+
+仅用于诊断的-DiagnosticMemoryTrim要求证据Label含diagnostic；在检查会话中创建trim-ui-inspection标记，可调用WebView.clearCache(false)观察资源缓存占用是否下降。默认检查不接受此操作。只读的device-memory-sample.mjs记录网页堆与独立渲染进程，正式旅程每5轮也保留同类数据，不触发GC。
+
+官网触摸检查需Node.js22+和ADB，使用安装后的生产APK，自动保护和恢复原设置，并结束检查与9222转发：
+
+```powershell
+.\scripts\run-device-release-checks.ps1 -DeviceSerial '10.93.192.96:5555'
+```
+
+覆盖首页、课程/单视频/合集、1.3.0新增功能以及首页/搜索/热门/动态/历史/稍后再看的深色截图。通过实际ADB输入操作控件，不注入替换版生产脚本。截图需目视复核；脚本结果不等同于所有页面像素均已检查。
+
+ThemeOnly只运行深色页面复验；FromStage可从指定独立阶段继续，失败阶段必须完整重新通过，保存原始失败日志。InspectOnly保留受保护的手工CDP会话，结束时创建/sdcard/Android/data/app.bilispeed.browser/files/stop-ui-inspection标记，finally自动恢复。动态深色检查包含官网独立.bg/.bgc装饰层；首页截图等待触屏排版和卡片就绪。点按前核对实际可见性和命中，尚未发送按钮输入时才重新定位，不重试已执行的导航来掩盖失败。
+
+# 2026-10-11 1.2.10 首页优化检查点（历史）
 
 需求：首页下拉刷新；删除底部搜索按钮；移除首页顶部大型轮播；连接的手机实测后更新 GitHub 和正式 Release。
 

@@ -13,7 +13,16 @@ export async function connectDevice() {
         socket.addEventListener('error', reject, { once: true });
     });
     let sequence = 0;
+    let closed = false;
     const pending = new Map();
+    socket.addEventListener('close', () => {
+        closed = true;
+        for (const request of pending.values()) {
+            clearTimeout(request.timer);
+            request.reject(new Error('CDP connection closed; restart the inspection scenario'));
+        }
+        pending.clear();
+    });
     socket.addEventListener('message', event => {
         const message = JSON.parse(event.data);
         const request = pending.get(message.id);
@@ -24,6 +33,7 @@ export async function connectDevice() {
         else request.resolve(message.result);
     });
     const send = (method, params = {}) => new Promise((resolve, reject) => {
+        if (closed) { reject(new Error('CDP connection closed; restart the inspection scenario')); return; }
         const id = ++sequence;
         const timer = setTimeout(() => { pending.delete(id); reject(new Error('CDP timeout: ' + method)); }, 20000);
         pending.set(id, { resolve, reject, timer });

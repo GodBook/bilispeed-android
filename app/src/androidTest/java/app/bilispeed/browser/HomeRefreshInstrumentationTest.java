@@ -37,6 +37,8 @@ public class HomeRefreshInstrumentationTest {
     private volatile CountDownLatch responseGate;
     private volatile boolean failNext;
     private final AtomicInteger httpErrors = new AtomicInteger();
+    private volatile CountDownLatch pageCommitted;
+    private volatile String expectedPage;
 
     @Before public void start() throws Exception {
         Context context = instrumentation.getTargetContext();
@@ -81,7 +83,10 @@ public class HomeRefreshInstrumentationTest {
                     System.out.println("HOME_REFRESH_STARTED=" + url);
                     original.onPageStarted(owner, url, icon);
                 }
-                @Override public void onPageFinished(WebView owner, String url) { original.onPageFinished(owner, url); }
+                @Override public void onPageFinished(WebView owner, String url) {
+                    original.onPageFinished(owner, url);
+                    if (url.equals(expectedPage) && pageCommitted != null) pageCommitted.countDown();
+                }
                 @Override public void doUpdateVisitedHistory(WebView owner, String url, boolean reload) {
                     original.doUpdateVisitedHistory(owner, url, reload);
                 }
@@ -222,5 +227,17 @@ public class HomeRefreshInstrumentationTest {
         awaitJs("innerWidth >= 1000 && document.querySelector('.recommended-swipe').getBoundingClientRect().height > 0");
         instrumentation.runOnMainSync(() -> activity.setTouchLayout(true));
         awaitJs("innerWidth < 600 && document.querySelector('.recommended-swipe').getBoundingClientRect().height === 0");
+    }
+    @Test public void popularAndDynamicListsSupportRealPullRefresh() throws Exception {
+        for (String root : new String[]{NavigationState.ROOTS[1],NavigationState.ROOTS[2]}) {
+            expectedPage=root+query;pageCommitted=new CountDownLatch(1);
+            instrumentation.runOnMainSync(()->activity.browserForTesting().loadUrl(expectedPage));
+            assertTrue("List document committed",pageCommitted.await(15,TimeUnit.SECONDS));
+            awaitNative(refresh::isEnabled);
+            int before=requests.get();pull();
+            awaitJs("window.requestSerial === "+(before+1));
+            awaitNative(()->!refresh.isRefreshing());
+            assertEquals(before+1,requests.get());
+        }
     }
 }

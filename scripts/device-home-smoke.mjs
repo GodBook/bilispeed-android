@@ -96,8 +96,9 @@ try {
     record('native-pull-reloaded-home', { before: initial.document, state: refreshed });
     await screen('refreshed');
 
-    await page.evaluate('scrollTo(0,850);true');
-    await waitFor('scrollY > 600');
+    await waitFor('document.documentElement.scrollHeight > innerHeight + 120');
+    await page.evaluate('scrollTo({top:Math.min(850,document.documentElement.scrollHeight-innerHeight),behavior:"instant"});true');
+    await waitFor('scrollY > 100');
     await swipe(initial.width/2, 110, initial.width/2, 280);
     await delay(1000);
     const scrolled = await state();

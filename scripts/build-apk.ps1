@@ -4,6 +4,8 @@ param(
     [switch]$RunUpdateCheck,
     [switch]$OriginalLayoutProbe,
     [ValidatePattern('^[A-Za-z0-9_.$,#]*$')][string]$TestFilter = '',
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9.-]*\.txt$')][string]$TestLogName = 'instrumentation-tests.txt',
+    [ValidateSet('', '1.0', '1.3', '1.5')][string]$FontScale = '',
     [string]$AndroidSdk = $env:ANDROID_HOME,
     [string]$DeviceSerial = $env:ANDROID_SERIAL
 )
@@ -14,6 +16,7 @@ if ($OriginalLayoutProbe -and $TestFilter -ne 'app.bilispeed.browser.PlaybackIns
 if ($TestFilter) { $RunTests = $true }
 if ($RunLiveCheck) { $RunTests = $true }
 if ($RunUpdateCheck) { $RunTests = $true }
+if ($FontScale -and -not $RunTests) { throw 'FontScale requires RunTests or TestFilter.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $releaseProperties = Get-Content -Raw -LiteralPath (Join-Path $projectRoot 'version.properties') | ConvertFrom-StringData
 $versionName = $releaseProperties.versionName
@@ -85,6 +88,9 @@ try {
         $testApp = Join-Path $testFolder 'app-release.apk'
         $testRunner = Join-Path $testFolder 'app-test.apk'
         $adb = Join-Path $AndroidSdk 'platform-tools\adb.exe'
+        $sessionRecord = Join-Path $outputFolder ('device-session-' + ($DeviceSerial -replace '[^A-Za-z0-9.-]', '_') + '.json')
+        . (Join-Path $PSScriptRoot 'device-session.ps1')
+        $sessionStarted = $false
         try {
             Copy-Item -LiteralPath 'app\build\outputs\apk\release\app-release.apk' -Destination $testApp
             Copy-Item -LiteralPath 'app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk' -Destination $testRunner
@@ -101,20 +107,25 @@ try {
                 & $adb -s $DeviceSerial shell input keyevent KEYCODE_WAKEUP
                 & $adb -s $DeviceSerial shell wm dismiss-keyguard
             }
+            $sessionStarted = $true
+            Start-DeviceSession
             $testClasses = if ($TestFilter) { $TestFilter } else {
-                'app.bilispeed.browser.PlaybackInstrumentationTest,app.bilispeed.browser.DesktopLayoutInstrumentationTest,app.bilispeed.browser.HomeRefreshInstrumentationTest,app.bilispeed.browser.VideoDetailsInstrumentationTest,app.bilispeed.browser.MyPageInstrumentationTest,app.bilispeed.browser.PlayerControlsInstrumentationTest,app.bilispeed.browser.UpdateInstrumentationTest,app.bilispeed.browser.BrowserRecoveryInstrumentationTest,app.bilispeed.browser.PhoneLayoutRegressionTest,app.bilispeed.browser.AccountPagesInstrumentationTest,app.bilispeed.browser.SettingsInstrumentationTest'
+                'app.bilispeed.browser.PlaybackInstrumentationTest,app.bilispeed.browser.DesktopLayoutInstrumentationTest,app.bilispeed.browser.HomeRefreshInstrumentationTest,app.bilispeed.browser.VideoDetailsInstrumentationTest,app.bilispeed.browser.MyPageInstrumentationTest,app.bilispeed.browser.PlayerControlsInstrumentationTest,app.bilispeed.browser.UpdateInstrumentationTest,app.bilispeed.browser.BrowserRecoveryInstrumentationTest,app.bilispeed.browser.PhoneLayoutRegressionTest,app.bilispeed.browser.AccountPagesInstrumentationTest,app.bilispeed.browser.SettingsInstrumentationTest,app.bilispeed.browser.NavigationThemeInstrumentationTest'
             }
             if ($RunLiveCheck) { $testClasses += ',app.bilispeed.browser.OfficialBilibiliSmokeTest' }
             if ($RunUpdateCheck) { $testClasses += ',app.bilispeed.browser.PublishedUpdateSmokeTest' }
             $probeOriginalLayout = if ($OriginalLayoutProbe) { 'true' } else { 'false' }
-            & $adb -s $DeviceSerial shell am instrument -w -r -e class $testClasses -e originalLayout $probeOriginalLayout `
-                app.bilispeed.browser.test/androidx.test.runner.AndroidJUnitRunner |
-                Tee-Object -FilePath (Join-Path $outputFolder 'instrumentation-tests.txt') |
+            $instrumentArguments=@('-s',$DeviceSerial,'shell','am','instrument','-w','-r','-e','class',$testClasses,'-e','originalLayout',$probeOriginalLayout)
+            if($FontScale){$instrumentArguments+=@('-e','fontScale',$FontScale)}
+            $instrumentArguments+='app.bilispeed.browser.test/androidx.test.runner.AndroidJUnitRunner'
+            & $adb @instrumentArguments |
+                Tee-Object -FilePath (Join-Path $outputFolder $TestLogName) |
                 Tee-Object -Variable instrumentOutput
             if ($LASTEXITCODE -ne 0 -or -not ($instrumentOutput -match '^OK \([1-9][0-9]* tests?\)')) {
-                throw 'Playback instrumentation tests did not pass. See artifacts/instrumentation-tests.txt.'
+                throw "Instrumentation tests did not pass. See artifacts/$TestLogName."
             }
         } finally {
+            if ($sessionStarted) { Stop-DeviceSession }
             Remove-Item -LiteralPath @($testApp, $testRunner, ($testRunner + '.idsig')) -Force -ErrorAction SilentlyContinue
             Remove-Item -LiteralPath $testFolder -Force -ErrorAction SilentlyContinue
         }

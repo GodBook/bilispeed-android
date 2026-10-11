@@ -52,11 +52,12 @@
         const controller = new AbortController(); pending = controller;
         const timeout = setTimeout(() => controller.abort(), 12000);
         text('status', '正在加载账号信息…'); element('retry').hidden = true;
-        resetProfile();
+        if (!loggedIn) resetProfile();
         try {
             const nav = await api('/x/web-interface/nav', controller.signal);
             if (current !== generation) return;
             if (nav.code === -101 || nav.code === 0 && nav.data && nav.data.isLogin === false) {
+                resetProfile();
                 text('status', '登录后同步历史记录、收藏与账号信息'); return;
             }
             if (nav.code !== 0 || !nav.data || !nav.data.isLogin) throw new Error('Account unavailable');
@@ -71,7 +72,10 @@
             if (current !== generation) return;
             text('status', loggedIn ? '关注与动态数据暂时加载失败' : '账号信息暂时加载失败，请检查网络');
             element('retry').hidden = false;
-        } finally { clearTimeout(timeout); if (pending === controller) pending = null; }
+        } finally {
+            clearTimeout(timeout); if (pending === controller) pending = null;
+            if (current === generation) window.BiliSpeedBridge?.postMessage(JSON.stringify({type:'profile-refreshed'}));
+        }
     }
 
     element('avatar').addEventListener('load', () => {
@@ -87,10 +91,17 @@
         document.body.classList.toggle('night', value);
         element('night').setAttribute('aria-pressed', String(value));
     }
-    try { night(localStorage.getItem('bilispeed-profile-night') === 'true'); } catch (_) { }
+    try {
+        const legacy = localStorage.getItem('bilispeed-profile-night');
+        if (window.__BILI_THEME__?.migrate && legacy !== null) {
+            window.BiliSpeedBridge?.postMessage(JSON.stringify({type:'migrate-theme',mode:legacy==='true'?'dark':'light'}));
+        }
+        night(!!window.__BILI_THEME__?.dark);
+    } catch (_) { }
     element('night').addEventListener('click', () => {
-        const value = !document.body.classList.contains('night'); night(value);
-        try { localStorage.setItem('bilispeed-profile-night', String(value)); } catch (_) { }
+        const value = !document.body.classList.contains('night');
+        if (window.BiliSpeedBridge) window.BiliSpeedBridge.postMessage(JSON.stringify({type:'theme',mode:value?'dark':'light'}));
+        else night(value);
     });
     element('offline').addEventListener('click', () => element('offline-dialog').showModal());
     element('open-link').addEventListener('click', () => { text('link-error', ''); element('link-dialog').showModal(); });
@@ -109,5 +120,6 @@
     });
     window.addEventListener('pagehide', () => { ++generation; if (pending) pending.abort(); });
     window.addEventListener('pageshow', event => { if (event.persisted) load(); });
+    window.__BiliMyRefresh = load;
     load();
 })();

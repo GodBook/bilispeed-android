@@ -32,11 +32,8 @@ final class SettingsPanel extends ScrollView {
         void onAction(String action);
     }
 
-    private static final int PINK = Color.rgb(215, 68, 111);
-    private static final int INK = Color.rgb(36, 38, 46);
-    private static final int MUTED = Color.rgb(120, 122, 132);
-    private static final int SOFT = Color.rgb(245, 246, 248);
-    private static final int BLUSH = Color.rgb(253, 237, 242);
+    private final ThemeColors colors;
+    private final int PINK, INK, MUTED, SOFT, BLUSH;
     private static final float[] PRESETS = {1, 1.25f, 1.5f, 2, 2.5f, 3, 3.5f, 4, 5};
     private final Listener listener;
     private final LinearLayout content;
@@ -54,6 +51,8 @@ final class SettingsPanel extends ScrollView {
     SettingsPanel(Context context, Listener listener) {
         super(context);
         this.listener = listener;
+        colors = new ThemeColors(context);
+        PINK = colors.accent; INK = colors.ink; MUTED = colors.muted; SOFT = colors.soft; BLUSH = colors.blush;
         setBackgroundColor(SOFT);
         setFillViewport(true);
         setClipToPadding(false);
@@ -76,7 +75,7 @@ final class SettingsPanel extends ScrollView {
         heading.addView(titles, new LinearLayout.LayoutParams(0, -2, 1));
         Button back = actionButton("返回浏览", false);
         back.setOnClickListener(view -> listener.onAction("back"));
-        heading.addView(back, new LinearLayout.LayoutParams(dp(88), dp(44)));
+        heading.addView(back, new LinearLayout.LayoutParams(dp(88), dp(48)));
         content.addView(heading);
 
         LinearLayout playback = section("播放", "倍速即时生效");
@@ -102,7 +101,7 @@ final class SettingsPanel extends ScrollView {
                 item.setTag(rate);
                 item.setContentDescription("选择 " + MainActivity.formatRate(rate) + " 倍速");
                 item.setOnClickListener(view -> listener.onRate(rate));
-                LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, dp(44), 1);
+                LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, dp(48), 1);
                 cell.rightMargin = column == 2 ? 0 : dp(8);
                 rates.addView(item, cell);
                 presets.add(item);
@@ -132,7 +131,7 @@ final class SettingsPanel extends ScrollView {
             @Override public void onStartTrackingTouch(SeekBar bar) { }
             @Override public void onStopTrackingTouch(SeekBar bar) { listener.onRate(.25f + bar.getProgress() * .05f); }
         });
-        playback.addView(slider, new LinearLayout.LayoutParams(-1, dp(44)));
+        playback.addView(slider, new LinearLayout.LayoutParams(-1, dp(48)));
         LinearLayout customRow = row();
         custom = new EditText(context);
         custom.setSingleLine(true);
@@ -144,7 +143,7 @@ final class SettingsPanel extends ScrollView {
         custom.setHint("例如 2.75");
         custom.setPadding(dp(14), 0, dp(14), 0);
         custom.setBackground(shape(SOFT, 12));
-        customRow.addView(custom, new LinearLayout.LayoutParams(0, dp(46), 1));
+        customRow.addView(custom, new LinearLayout.LayoutParams(0, dp(48), 1));
         customRow.addView(label("  倍  ", 14, MUTED));
         Button apply = actionButton("应用", true);
         apply.setOnClickListener(view -> applyCustomRate());
@@ -153,12 +152,15 @@ final class SettingsPanel extends ScrollView {
             applyCustomRate();
             return true;
         });
-        customRow.addView(apply, new LinearLayout.LayoutParams(dp(72), dp(46)));
+        customRow.addView(apply, new LinearLayout.LayoutParams(dp(72), dp(48)));
         playback.addView(customRow);
         remember = toggle(playback, "记住上次倍速", "下次打开时沿用当前选择", enabled -> listener.onRemember(enabled));
 
         LinearLayout browsing = section("浏览与外观", "适合手机，也保留原版选择");
         touch = toggle(browsing, "手机触屏布局", "关闭后使用电脑原版，可双指缩放", enabled -> listener.onTouchLayout(enabled));
+        divider(browsing);
+        String mode = context.getSharedPreferences("playback", 0).getString("theme", "system");
+        settingAction(browsing, "应用主题", "dark".equals(mode) ? "深色" : "light".equals(mode) ? "浅色" : "跟随系统", "theme");
         divider(browsing);
         settingAction(browsing, "字幕按钮外观", "调整大小与不透明度", "appearance");
 
@@ -242,7 +244,7 @@ final class SettingsPanel extends ScrollView {
         content.addView(heading);
         LinearLayout group = column();
         group.setPadding(dp(16), dp(12), dp(16), dp(12));
-        group.setBackground(shape(Color.WHITE, 18));
+        group.setBackground(shape(colors.surface, 18));
         content.addView(group, new LinearLayout.LayoutParams(-1, -2));
         return group;
     }
@@ -309,7 +311,7 @@ final class SettingsPanel extends ScrollView {
     private Button actionButton(String text, boolean primary) {
         Button view = new Button(getContext());
         view.setText(text); view.setTextSize(14); view.setAllCaps(false);
-        view.setTextColor(primary ? Color.WHITE : INK);
+        view.setTextColor(primary ? colors.primaryText : INK);
         view.setMinWidth(0); view.setMinimumWidth(0); view.setMinHeight(0); view.setMinimumHeight(0);
         view.setPadding(dp(4), 0, dp(4), 0);
         view.setBackground(ripple(primary ? PINK : SOFT, 11));

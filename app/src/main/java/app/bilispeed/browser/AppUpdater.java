@@ -30,7 +30,7 @@ import java.util.concurrent.Executors;
 final class AppUpdater {
     private static final long CHECK_INTERVAL = 24L * 60 * 60 * 1000;
     private static final long RETRY_INTERVAL = 15L * 60 * 1000;
-    private final Activity activity;
+    private final MainActivity activity;
     private final SharedPreferences preferences;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -52,7 +52,7 @@ final class AppUpdater {
                 preferences.getLong("last_attempt", 0))) check(false);
     }
 
-    AppUpdater(Activity activity) {
+    AppUpdater(MainActivity activity) {
         this.activity = activity;
         preferences = activity.getSharedPreferences("updates", Context.MODE_PRIVATE);
         folder = new File(activity.getFilesDir(), "updates");
@@ -132,7 +132,7 @@ final class AppUpdater {
         cancelled = false;
         preferences.edit().putLong("last_attempt", System.currentTimeMillis()).apply();
         if (manual) {
-            operationDialog = new AlertDialog.Builder(activity).setTitle("检查更新")
+            operationDialog = activity.dialogBuilder().setTitle("检查更新")
                     .setMessage("正在连接 GitHub…").setNegativeButton("取消", (dialog, which) -> cancelCheck())
                     .setOnCancelListener(dialog -> cancelCheck()).show();
         }
@@ -147,7 +147,7 @@ final class AppUpdater {
                     available = release.newerThan(BuildConfig.VERSION_CODE) ? release : null;
                     if (manualCheck && resumed) {
                         if (available != null) showRelease(release);
-                        else new AlertDialog.Builder(activity).setTitle("已是最新版本")
+                        else activity.dialogBuilder().setTitle("已是最新版本")
                                 .setMessage("当前版本 " + BuildConfig.VERSION_NAME).setPositiveButton("知道了", null).show();
                     } else if (available != null && resumed
                             && preferences.getInt("notified_code", 0) != release.versionCode) {
@@ -176,7 +176,7 @@ final class AppUpdater {
     private void showRelease(ReleaseInfo release) {
         if (closed || !resumed) return;
         if (release.minSdk > Build.VERSION.SDK_INT) {
-            new AlertDialog.Builder(activity).setTitle("此更新需要更高版本的 Android")
+            activity.dialogBuilder().setTitle("此更新需要更高版本的 Android")
                     .setMessage("新版本 " + release.versionName + " 需要 Android API " + release.minSdk)
                     .setPositiveButton("知道了", null).show();
             return;
@@ -186,7 +186,7 @@ final class AppUpdater {
                 + "\n下载大小 " + String.format(Locale.CHINA, "%.2f MB", release.size / 1048576.0)
                 + (release.notes.isEmpty() ? "" : "\n\n" + release.notes)
                 + "\n\n覆盖安装会保留倍速设置和网页登录状态。";
-        new AlertDialog.Builder(activity).setTitle("发现新版本").setMessage(message)
+        activity.dialogBuilder().setTitle("发现新版本").setMessage(message)
                 .setNegativeButton("稍后", null)
                 .setNeutralButton("发布页", (dialog, which) -> openReleases())
                 .setPositiveButton(downloaded ? "安装已下载版本" : "下载并更新", (dialog, which) -> {
@@ -208,7 +208,7 @@ final class AppUpdater {
         progress.setMax(100);
         layout.addView(label);
         layout.addView(progress, new LinearLayout.LayoutParams(-1, -2));
-        operationDialog = new AlertDialog.Builder(activity).setTitle("下载更新").setView(layout)
+        operationDialog = activity.dialogBuilder().setTitle("下载更新").setView(layout)
                 .setNegativeButton("取消下载", (dialog, which) -> cancelDownload())
                 .setOnCancelListener(dialog -> cancelDownload()).show();
         File partial = new File(folder, "downloading.apk");
@@ -265,7 +265,7 @@ final class AppUpdater {
     private void verifyAndInstall(ReleaseInfo release) {
         if (busy || closed) return;
         busy = true;
-        operationDialog = new AlertDialog.Builder(activity).setTitle("校验更新包")
+        operationDialog = activity.dialogBuilder().setTitle("校验更新包")
                 .setMessage("正在检查文件和应用签名…").setCancelable(false).show();
         worker.execute(() -> {
             try {
@@ -290,7 +290,7 @@ final class AppUpdater {
 
     private void offerInstall(ReleaseInfo release) {
         if (!activity.getPackageManager().canRequestPackageInstalls()) {
-            new AlertDialog.Builder(activity).setTitle("允许安装应用更新")
+            activity.dialogBuilder().setTitle("允许安装应用更新")
                     .setMessage("首次更新需要在系统设置中允许本应用安装更新包。设置完成后返回，即可继续安装。")
                     .setNegativeButton("稍后", null).setPositiveButton("去设置", (dialog, which) -> {
                         try {
@@ -337,7 +337,7 @@ final class AppUpdater {
         if (!(exception instanceof IOException) || detail == null || !detail.matches("(?s).*[\\u4e00-\\u9fff].*")) {
             detail = "网络连接失败或系统暂不可用，请确认能够访问 GitHub 后重试。";
         }
-        new AlertDialog.Builder(activity).setTitle(title).setMessage(detail)
+        activity.dialogBuilder().setTitle(title).setMessage(detail)
                 .setNegativeButton("关闭", null).setPositiveButton("打开发布页", (dialog, which) -> openReleases()).show();
     }
 

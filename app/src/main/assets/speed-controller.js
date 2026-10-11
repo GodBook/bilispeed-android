@@ -306,6 +306,7 @@
     }
 
     function configure(message) {
+        if (message.theme && window.__BiliBrowserState) window.__BiliBrowserState.applyTheme(message.theme);
         if (typeof message.suspended === 'boolean') suspended = message.suspended;
         if (window.__BiliTouch) window.__BiliTouch.setSuspended(suspended);
         if (message.buttons && window.__BiliTouchPlayer) window.__BiliTouchPlayer.setAppearance(message.buttons);

@@ -1,7 +1,7 @@
-:root { color-scheme: light; --surface: #fff; --ink: #18191c; --muted: #999; --pink: #e87599; --blue: #41a4c8; }
+:root { color-scheme: light; --surface: #fff; --ink: #24262e; --muted: #656775; --pink: #b52d5b; --blue: #24728f; }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--surface); color: var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Noto Sans", "Microsoft YaHei", sans-serif; }
-body.night { color-scheme: dark; --surface: #191a1f; --ink: #eee; --muted: #999ca6; }
+body.night { color-scheme: dark; --surface: #191a1f; --ink: #eeeef2; --muted: #b2b4bf; --pink: #ff91b2; --blue: #7ac3df; }
 a { color: inherit; text-decoration: none; }
 button, input { font: inherit; }
 button { background: transparent; border: 0; color: inherit; cursor: pointer; }
@@ -23,7 +23,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .identity { flex: 1; min-width: 0; padding-right: 2px; }
 .name-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 #username { font-size: 21px; line-height: 1.4; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.edit { display: grid; place-items: center; width: 22px; min-height: 36px; flex: none; color: var(--muted); }
+.edit { display: grid; place-items: center; width: 44px; min-height: 44px; flex: none; color: var(--muted); }
 .edit svg { width: 20px; height: 20px; }
 .level { flex: none; color: #fff; font-size: 10px; font-weight: 600; line-height: 15px; padding: 0 3px; border-radius: 2px; background: #f4b280; }
 .member { display: inline-block; color: var(--pink); font-size: 12px; line-height: 17px; border: 1px solid var(--pink); border-radius: 3px; padding: 0 4px; margin: 5px 0 6px; }
@@ -39,6 +39,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .shortcuts a, .shortcuts button { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0; min-height: 68px; color: #444; font-size: 14px; }
 .night .shortcuts a, .night .shortcuts button { color: var(--ink); }
 .shortcuts svg { color: var(--blue); width: 29px; height: 29px; stroke-width: 1.8; }
+.shortcuts small { display:block;font-size:11px;color:var(--muted); }
 .status { color: var(--muted); font-size: 12px; margin-top: 22px; text-align: center; }
 .status button { color: var(--pink); min-height: 44px; padding: 0 10px; }
 dialog { width: calc(100% - 40px); max-width: 380px; border: 0; border-radius: 16px; padding: 24px; color: var(--ink); background: var(--surface); }

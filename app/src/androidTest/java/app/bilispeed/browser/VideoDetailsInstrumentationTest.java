@@ -27,6 +27,7 @@ public class VideoDetailsInstrumentationTest {
         target.getSharedPreferences("updates", Context.MODE_PRIVATE).edit().putBoolean("automatic", false).commit();
         activity = (MainActivity) instrumentation.startActivitySync(new Intent(target, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        DeviceTestLayout.portrait(instrumentation,activity);
         String width = InstrumentationRegistry.getArguments().getString("layoutWidth");
         if (width != null) instrumentation.runOnMainSync(() -> {
             android.view.View container = (android.view.View) activity.browserForTesting().getParent();
@@ -76,6 +77,7 @@ public class VideoDetailsInstrumentationTest {
         try { assertTrue("Fixture document did not commit", committed.await(15, TimeUnit.SECONDS)); }
         finally { instrumentation.runOnMainSync(() -> activity.browserForTesting().removeJavascriptInterface("VideoFixtureLoaded")); }
         await("window.detailsFixture===" + sequence + "&&window.__BiliTouchVideo");
+        await("innerWidth<600 && innerHeight>innerWidth");
         String width = InstrumentationRegistry.getArguments().getString("layoutWidth");
         if (width != null) assertEquals(Integer.parseInt(width), ((Number) js("innerWidth")).doubleValue(), 1);
     }

@@ -21,6 +21,7 @@ public class PhoneLayoutRegressionTest {
     @Before public void launch() {
         activity = (MainActivity) instrumentation.startActivitySync(new Intent(instrumentation.getTargetContext(), MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        DeviceTestLayout.portrait(instrumentation,activity);
     }
 
     @After public void finish() {
@@ -61,7 +62,7 @@ public class PhoneLayoutRegressionTest {
         // lose its callback. Wait for the fixture commit before querying it.
         try { assertTrue("Fixture document did not finish loading", committed.await(15, TimeUnit.SECONDS)); }
         finally { instrumentation.runOnMainSync(() -> activity.browserForTesting().removeJavascriptInterface("PhoneFixtureLoaded")); }
-        await("window.__BiliTouch && document.documentElement.hasAttribute('data-bilispeed-touch')");
+        await("window.__BiliTouch && document.documentElement.hasAttribute('data-bilispeed-touch') && innerWidth<600 && innerHeight>innerWidth");
     }
 
     @Test public void searchPercentageColumnsDoNotShrinkInsideTwoColumnGrid() throws Exception {

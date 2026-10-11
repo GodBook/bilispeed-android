@@ -119,8 +119,10 @@ public class PlaybackInstrumentationTest {
 
     private void loadFixture(String origin, String historyUrl) throws Exception {
         int identity = ++fixtureId;
+        CountDownLatch committed=new CountDownLatch(1);
+        Object bridge=new Object(){@android.webkit.JavascriptInterface public void ready(){committed.countDown();}};
         String html = "<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'>"
-                + "<script>window.__BILISPEED_TEST_FIXTURE__=" + identity + ";</script>"
+                + "<script>window.__BILISPEED_TEST_FIXTURE__=" + identity + ";addEventListener('load',()=>PlaybackFixtureLoaded.ready());</script>"
                 + "<style>body{margin:0;background:#fff}video{width:100%;max-height:280px}"
                 + "button{font-size:18px;padding:12px}</style>"
                 + "<video id='v' controls playsinline muted loop preload='auto' src='" + media + "'></video>"
@@ -128,10 +130,13 @@ public class PlaybackInstrumentationTest {
                 + "document.getElementById('v').requestFullscreen().catch(function(e){window._fsError=e.message;})\">全屏</button>";
         instrumentation.runOnMainSync(() -> {
             WebView browser = activity.browserForTesting();
+            browser.addJavascriptInterface(bridge,"PlaybackFixtureLoaded");
             browser.stopLoading();
             browser.getSettings().setMediaPlaybackRequiresUserGesture(false);
             browser.loadDataWithBaseURL(origin, html, "text/html", "UTF-8", historyUrl);
         });
+        try{assertTrue("Playback fixture document committed",committed.await(20,TimeUnit.SECONDS));}
+        finally{instrumentation.runOnMainSync(()->activity.browserForTesting().removeJavascriptInterface("PlaybackFixtureLoaded"));}
         await("window.__BILISPEED_TEST_FIXTURE__ === " + identity
                 + " && document.getElementById('v') && document.getElementById('v').readyState >= 2", 20000);
         if (MainActivity.isBiliHttps(origin)) await("!!window.__BiliSpeed", 10000);
@@ -160,6 +165,7 @@ public class PlaybackInstrumentationTest {
             }
             SystemClock.sleep(100);
         }
+        try{System.out.println("PLAYBACK_FAILURE_STATE="+js("JSON.stringify({url:location.href,identity:window.__BILISPEED_TEST_FIXTURE__,controller:window.__BiliSpeed?.snapshot(),video:document.getElementById('v')?{ready:v.readyState,network:v.networkState,paused:v.paused,rate:v.playbackRate,error:v.error?.message}:null})"));}catch(Exception|AssertionError ignored){}
         fail("Condition timed out: " + condition);
     }
 

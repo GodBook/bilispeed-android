@@ -80,6 +80,10 @@ try {
             .filter(e=>e.getBoundingClientRect().width>0).map(e=>({class:e.className,...rect(e)}));
         return {stage:${JSON.stringify(stage)},url:location.href,title:document.title,width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth,
             cards:cards.map(rect),regions,kind:document.documentElement.dataset.bilispeedPage,
+            theme:{mode:document.documentElement.dataset.bilispeedTheme,body:getComputedStyle(document.body).backgroundColor,
+                backdrop:Array.from(document.querySelectorAll('body,#app,.bili-dyn-home--member')).map(e=>({class:e.className,id:e.id,background:getComputedStyle(e).backgroundColor,image:getComputedStyle(e).backgroundImage})),
+                dynamicLabels:Array.from(document.querySelectorAll('.bili-dyn-up-list *')).filter(e=>!e.children.length&&e.textContent.trim()).map(e=>({class:e.className,text:e.textContent.trim().slice(0,80),color:getComputedStyle(e).color})),
+                surfaces:Array.from(document.querySelectorAll('.search-layout,.popular-container,.bili-dyn-item,.history-list,.watchlater-list')).slice(0,6).map(e=>({class:e.className,background:getComputedStyle(e).backgroundColor,color:getComputedStyle(e).color}))},
             dynamicHighlight:document.querySelector('.bili-dyn-list-tabs__highlight')?rect(document.querySelector('.bili-dyn-list-tabs__highlight')):null,
             tabs:Array.from(document.querySelectorAll('.nav-tabs__item')).map(e=>({text:e.innerText,...rect(e)})),
             player:document.querySelector('.bpx-player-container')?{screen:document.querySelector('.bpx-player-container').dataset.screen,position:getComputedStyle(document.querySelector('.bpx-player-container')).position,...rect(document.querySelector('.bpx-player-container'))}:null,
@@ -92,6 +96,11 @@ try {
             inputs:Array.from(document.querySelectorAll('input')).filter(e=>e.getBoundingClientRect().width>0).map(rect)};
     })()`);
     assert(result.scrollWidth <= result.width + 2, 'Page overflows horizontally: ' + JSON.stringify(result));
+    if(evidencePrefix.endsWith('-dark-')) {
+        assert.equal(result.theme.mode,'dark','Dark theme did not reach the new document');
+        assert.equal(result.theme.body,'rgb(25, 26, 31)','Dark page background was not applied');
+        if(stage==='dynamic')assert.equal(await page.evaluate("[...document.querySelectorAll('#app>.bg,#app>.bgc')].every(e=>getComputedStyle(e).display==='none')"),true,'Light dynamic decoration remains visible');
+    }
     for (const card of result.cards) {
         assert(card.x >= -1 && card.right <= result.width + 2, 'Card extends outside viewport');
         assert(card.w > result.width * .3, 'Card is compressed');

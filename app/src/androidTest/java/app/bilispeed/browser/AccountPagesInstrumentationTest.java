@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.Assert.*;
 
 /** Real WebView geometry and Android touch regression for official account markup.
- * Does not modify account data, Cookies or preferences. layoutWidth=320 also runs on a phone. */
+ * Uses protected test preferences; no account data or Cookie writes. layoutWidth=320 also runs on a phone. */
 public class AccountPagesInstrumentationTest {
     private final Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
     private MainActivity activity;
@@ -186,12 +186,14 @@ public class AccountPagesInstrumentationTest {
     }
 
     @Test public void memberDynamicColumnVideoAndActionsFitAndCommentCanBeTapped() throws Exception {
-        fixture("https://t.bilibili.com/", ".bili-dyn-home--member{display:flex;width:1100px}.bili-dyn-home--member>aside{width:240px}"
+        fixture("https://t.bilibili.com/", "#app>.bg,#app>.bgc{display:block;position:fixed;inset:0;z-index:-1}#app>.bgc{background:#d3e9e8}"
+                + ".bili-dyn-home--member{display:flex;width:1100px}.bili-dyn-home--member>aside{width:240px}"
                 + ".bili-dyn-home--member>main{width:556px}.bili-dyn-item__main{padding-left:88px}.bili-dyn-item__header,.bili-dyn-item__body,.bili-dyn-item__footer{width:448px}"
                 + ".bili-dyn-card-video{width:448px;display:flex}.bili-dyn-card-video__header{width:200px}.bili-dyn-card-video__body{width:248px}"
                 + ".bili-dyn-item__footer{display:flex}.bili-dyn-item__action{width:104px}"
                 + ".bili-album__preview.grid3{display:grid;width:404px;grid-template-columns:repeat(3,1fr);gap:4px}.bili-album__preview__picture{width:132px;height:132px}",
-                "<div class='bili-dyn-home--member'><aside class='left'>电脑侧栏</aside><main><section>" + dynamicCard() + "</section></main><aside class='right'>趋势</aside></div>");
+                "<div class='bgc'></div><div class='bg' style='background-image:linear-gradient(#d3e9e8,#d3e9e8)'></div>"
+                + "<div class='bili-dyn-home--member'><aside class='left'>电脑侧栏</aside><main><section>" + dynamicCard() + "</section></main><aside class='right'>趋势</aside></div>");
         assertEquals("none", js("getComputedStyle(document.querySelector('aside.left')).display"));
         inside(".bili-dyn-home--member > main, .bili-dyn-item, .bili-dyn-card-video, .bili-dyn-card-video__body, .bili-dyn-item__action button");
         js("var album=document.createElement('div');album.className='bili-album__preview grid3';album.innerHTML='<div class=bilispeed-fixture-photo></div>'.repeat(6);"
@@ -200,15 +202,26 @@ public class AccountPagesInstrumentationTest {
         assertEquals(true, js("(()=>{let r=document.querySelector('.bili-album__preview__picture').getBoundingClientRect();return Math.abs(r.width-r.height)<2})()"));
         tap("#comment");
         await("window.commentOpened");
+        String originalMode=activity.getSharedPreferences("playback",0).getString("theme","system");
+        try {
+            instrumentation.runOnMainSync(()->activity.setThemeMode("dark"));
+            await("document.documentElement.dataset.bilispeedTheme==='dark'");
+            assertEquals("none",js("getComputedStyle(document.querySelector('#app>.bg')).display"));
+            assertEquals("none",js("getComputedStyle(document.querySelector('#app>.bgc')).display"));
+            instrumentation.runOnMainSync(()->activity.setThemeMode("light"));
+            await("document.documentElement.dataset.bilispeedTheme==='light'");
+            assertEquals("block",js("getComputedStyle(document.querySelector('#app>.bg')).display"));
+            assertEquals("block",js("getComputedStyle(document.querySelector('#app>.bgc')).display"));
+        } finally { instrumentation.runOnMainSync(()->activity.setThemeMode(originalMode)); }
     }
 
     @Test public void dynamicDetailAndLateShadowCommentsFit() throws Exception {
         fixture("https://t.bilibili.com/123456", ".content,.card{width:632px}.bili-dyn-item{width:632px}",
                 "<div class='content'><div class='card'>" + dynamicCard() + "</div><bili-comments></bili-comments></div>");
         inside("#app > .content, .card, .bili-dyn-item, .bili-dyn-card-video");
-        js("var root=document.querySelector('bili-comments').attachShadow({mode:'open'});var actions=document.createElement('bili-comment-action-buttons-renderer');root.append(actions);"
-                + "actions.attachShadow({mode:'open'}).innerHTML='<style>:host{display:flex;width:210px}</style><div id=pubdate>日期</div><div id=reply><button>回复</button></div>';true");
-        await("actions.shadowRoot.getElementById('bilispeed-comment-style')");
+        js("setTimeout(()=>{var root=document.querySelector('bili-comments').attachShadow({mode:'open'});window.actions=document.createElement('bili-comment-action-buttons-renderer');root.append(actions);"
+                + "setTimeout(()=>{actions.attachShadow({mode:'open'}).innerHTML='<style>:host{display:flex;width:210px}</style><div id=pubdate>日期</div><div id=reply><button>回复</button></div>';},250);},350);true");
+        await("window.actions && actions.shadowRoot && actions.shadowRoot.getElementById('bilispeed-comment-style')");
     }
 
     @Test public void spaceHomeAndFollowingKeepContentAndAccountActionsInsidePhone() throws Exception {

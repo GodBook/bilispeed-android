@@ -40,8 +40,10 @@ public class DesktopLayoutInstrumentationTest {
     }
 
     private MainActivity start() {
-        return (MainActivity) instrumentation.startActivitySync(new Intent(instrumentation.getTargetContext(), MainActivity.class)
+        MainActivity result = (MainActivity) instrumentation.startActivitySync(new Intent(instrumentation.getTargetContext(), MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        DeviceTestLayout.portrait(instrumentation,result);
+        return result;
     }
 
     @After public void finish() {
@@ -100,6 +102,8 @@ public class DesktopLayoutInstrumentationTest {
         try { assertTrue("Layout fixture commit", committed.await(15, TimeUnit.SECONDS)); }
         finally { instrumentation.runOnMainSync(() -> activity.browserForTesting().removeJavascriptInterface("LayoutFixtureLoaded")); }
         await("window.fixture === " + identity + " && window.__BiliSpeed");
+        if (instrumentation.getTargetContext().getSharedPreferences("playback",0).getBoolean("touchLayout",true))
+            await("document.documentElement.hasAttribute('data-bilispeed-touch') && innerWidth<600 && innerHeight>innerWidth");
     }
 
     private TextView label(View root, String text) {
@@ -254,9 +258,8 @@ public class DesktopLayoutInstrumentationTest {
         instrumentation.runOnMainSync(() -> {
             TextView menu = label(activity.getWindow().getDecorView(), "···");
             TextView speed = label(activity.getWindow().getDecorView(), "3.5x  倍速");
-            assertNotNull(menu); assertNotNull(speed);
-            assertFalse("Legacy menu must remain hidden", menu.isShown());
-            assertFalse("Legacy speed button must remain hidden", speed.isShown());
+            assertNull("Legacy menu must no longer be constructed", menu);
+            assertNull("Legacy speed button must no longer be constructed", speed);
             TextView settings = label(activity.getWindow().getDecorView(), "设置");
             assertNotNull(settings); assertTrue(settings.isShown());
         });
@@ -300,7 +303,7 @@ public class DesktopLayoutInstrumentationTest {
             activity.browserForTesting().stopLoading();
             activity.browserForTesting().loadDataWithBaseURL("https://account.bilibili.com/account/home", html, "text/html", "UTF-8", null);
         });
-        await("document.documentElement.dataset.bilispeedPage==='account' && document.querySelector('.security-left')");
+        await("document.documentElement.dataset.bilispeedPage==='account' && document.querySelector('.security-left') && innerWidth<600 && innerHeight>innerWidth");
         assertTrue((Boolean) js("['.security_content','.security-right','.home-right','.home-top-msg-name','#nickname'].every(function(s){"
                 + "var r=document.querySelector(s).getBoundingClientRect();return r.width>50&&r.left>=0&&r.right<=innerWidth+1;})"));
         assertTrue((Boolean) js("document.querySelector('.security-left').scrollWidth>document.querySelector('.security-left').clientWidth"));

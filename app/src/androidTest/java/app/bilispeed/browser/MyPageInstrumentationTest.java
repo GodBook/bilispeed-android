@@ -103,7 +103,7 @@ public class MyPageInstrumentationTest {
         js("window.nightBefore=document.getElementById('night').getAttribute('aria-pressed');window.nightStored=localStorage.getItem('bilispeed-profile-night');true");
         try {
             js("document.getElementById('night').click();true");
-            assertTrue((Boolean) js("document.getElementById('night').getAttribute('aria-pressed')!==nightBefore"));
+            await("document.getElementById('night').getAttribute('aria-pressed')!==nightBefore");
         } finally {
             js("if(document.getElementById('night').getAttribute('aria-pressed')!==nightBefore)document.getElementById('night').click();"
                     + "if(nightStored===null)localStorage.removeItem('bilispeed-profile-night');else localStorage.setItem('bilispeed-profile-night',nightStored);true");
@@ -164,6 +164,22 @@ public class MyPageInstrumentationTest {
         await("document.getElementById('retry').hidden && document.getElementById('status').textContent.includes('登录后')");
     }
 
+    @Test public void refreshPreservesProfileWhileAccountRequestIsPending() throws Exception {
+        fixture("window.fetch=function(url){return Promise.resolve({ok:true,json:()=>Promise.resolve(url.endsWith('/nav/stat')?{code:0,data:{dynamic_count:2,following:3,follower:4}}:{code:0,data:{isLogin:true,mid:42,uname:'保留资料',money:5}})});};");
+        js("window.fetch=()=>new Promise(resolve=>{window.finishRefresh=()=>resolve({ok:true,json:()=>Promise.resolve({code:-101,data:{isLogin:false}})});});window.__BiliMyRefresh();true");
+        assertEquals("保留资料",js("document.getElementById('username').textContent"));
+        assertEquals("5",js("document.getElementById('coins').textContent"));
+        js("finishRefresh();true");await("document.getElementById('username').textContent==='登录 / 注册'");
+    }
+    @Test public void legacyNightPreferenceMigratesToNativeTheme() throws Exception {
+        fixture("window.savedLegacy=localStorage.getItem('bilispeed-profile-night');localStorage.setItem('bilispeed-profile-night','true');window.fetch=()=>Promise.resolve({ok:true,json:()=>Promise.resolve({code:-101,data:{isLogin:false}})});");
+        try {
+            await("document.documentElement.dataset.bilispeedTheme==='dark' && document.body.classList.contains('night')");
+            assertEquals("dark",instrumentation.getTargetContext().getSharedPreferences("playback",0).getString("theme",""));
+        } finally {
+            js("if(savedLegacy===null)localStorage.removeItem('bilispeed-profile-night');else localStorage.setItem('bilispeed-profile-night',savedLegacy);true");
+        }
+    }
     @Test public void longNicknameIsTextAndExpiredSessionClearsPrivateDetails() throws Exception {
         fixture("window.fetch=function(url){return Promise.resolve({ok:true,json:function(){return Promise.resolve(url.endsWith('/nav/stat')?{code:0,data:{dynamic_count:0,following:0,follower:0}}"
                 + ":{code:0,data:{isLogin:true,mid:42,uname:'<img onerror=alert(1)>这是一个很长很长的账号昵称',money:0,wallet:{bcoin_balance:0},level_info:{current_level:0}}});}});};");

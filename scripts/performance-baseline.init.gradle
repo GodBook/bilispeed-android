@@ -1,0 +1,14 @@
+// Only used to rebuild the tagged 1.2.10 baseline for same-device benchmarks.
+// Keep its versionCode equal to the candidate so no user-data-clearing downgrade is needed.
+allprojects {
+    afterEvaluate { project ->
+        if (project.plugins.hasPlugin('com.android.application')) {
+            project.android.signingConfigs.localRelease {
+                storeFile new File(System.getenv('BILISPEED_BENCHMARK_KEY'))
+                storePassword System.getenv('BILISPEED_SIGNING_PASSWORD')
+                keyAlias 'bilispeed'
+                keyPassword System.getenv('BILISPEED_SIGNING_PASSWORD')
+            }
+        }
+    }
+}

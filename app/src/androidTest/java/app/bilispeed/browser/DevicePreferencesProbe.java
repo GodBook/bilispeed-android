@@ -35,11 +35,17 @@ public class DevicePreferencesProbe {
             }
             saved.put(name, preferences);
         }
-        try (FileOutputStream output = new FileOutputStream(snapshot())) {
+        File pending = new File(context.getFilesDir(), "device-test-preferences.pending");
+        try (FileOutputStream output = new FileOutputStream(pending)) {
             output.write(saved.toString().getBytes(StandardCharsets.UTF_8));
             output.getFD().sync();
         }
+        assertTrue("Publish the complete snapshot atomically", pending.renameTo(snapshot()));
         assertTrue(snapshot().isFile());
+    }
+
+    @Test public void restoreInterruptedSession() throws Exception {
+        if (snapshot().exists()) restorePreferences();
     }
 
     @Test public void restorePreferences() throws Exception {

@@ -15,6 +15,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const selector = name => '[data-bilispeed-control="' + name + '"]';
 const q = value => 'document.querySelector(' + JSON.stringify(value) + ')';
 const records = [];
+let lastPoint;
 
 async function waitFor(expression, seconds = 45) {
     const deadline = Date.now() + seconds * 1000;
@@ -32,14 +33,17 @@ async function waitFor(expression, seconds = 45) {
 }
 
 async function point(target, x = .5, y = .5) {
-    const css = await page.evaluate(`(()=>{const r=${q(target)}.getBoundingClientRect();return {x:r.x+r.width*${x},y:r.y+r.height*${y},width:visualViewport.width};})()`);
+    const css = await page.evaluate(`(()=>{const e=${q(target)},r=e.getBoundingClientRect(),x=r.x+r.width*${x},y=r.y+r.height*${y};return {x,y,width:visualViewport.width,visible:e.checkVisibility(),hit:!!document.elementFromPoint(x,y)?.closest(${JSON.stringify(target)}),disabled:!!e.disabled};})()`);
     const targets = await (await fetch('http://127.0.0.1:9222/json')).json();
     const surface = JSON.parse(targets.find(target => target.id === page.target.id).description);
     const scale = surface.width / css.width;
-    return [Math.round(surface.screenX + css.x * scale), Math.round(surface.screenY + css.y * scale)];
+    const device=[Math.round(surface.screenX + css.x * scale), Math.round(surface.screenY + css.y * scale)];
+    lastPoint={target,css,surface,device};
+    return Object.assign(device,{hit:css.hit,visible:css.visible,disabled:css.disabled});
 }
 
 async function tap(target) {
+    for(let preparation=0;preparation<3;preparation++){
     if (await page.evaluate(`!!${q(target)}?.closest('#bilispeed-touch-controls')&&document.getElementById('bilispeed-touch-controls').dataset.hidden==='true'`)) {
         const [x, y] = await point('.bpx-player-video-area', .5, .25);
         execFileSync('adb', ['-s', serial, 'shell', 'input', 'tap', String(x), String(y)]);
@@ -54,9 +58,17 @@ async function tap(target) {
         return true;
     })()`);
     await delay(250);
-    const [x, y] = await point(target);
+    const position=await point(target);
+    // Autohide can expire while resolving the native surface. No button input
+    // has been sent yet; reveal and remap it before taking the actual action.
+    if(!position.hit||!position.visible)continue;
+    assert.ok(!position.disabled,'Disabled touch target: '+target);
+    const [x, y] = position;
     execFileSync('adb', ['-s', serial, 'shell', 'input', 'tap', String(x), String(y)]);
     await delay(250);
+    return;
+    }
+    throw new Error('Touch target is hidden or obscured: '+target);
 }
 
 async function screenshot(name) {
@@ -217,6 +229,8 @@ try {
         await tap(selector('close-panel')); await record('single-video-speed');
     } else throw new Error('Use course, boundaries, collection-fullscreen, or single');
 } catch (error) {
+    const state=await page.evaluate(`({url:location.href,ready:document.readyState,hidden:document.querySelector('#bilispeed-touch-controls')?.dataset.hidden,navigation:window.__BiliTouchVideo?.getNavigation?.(),video:[...document.querySelectorAll('video')].map(v=>({ready:v.readyState,paused:v.paused,time:v.currentTime})),previous:document.querySelector('[data-bilispeed-control=previous]')?.outerHTML})`).catch(()=>null);
+    await writeFile(`artifacts/device-${prefix}player-${stage}-failure.json`,JSON.stringify({message:error.message,lastPoint,state},null,2)+'\n');
     await screenshot('player-' + stage + '-failure').catch(() => {});
     console.error(error); process.exitCode = 1;
 } finally { page.close(); }

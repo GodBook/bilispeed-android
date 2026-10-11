@@ -481,21 +481,26 @@ public class PlayerControlsInstrumentationTest {
 
     private AtomicInteger serveEpisodeDocuments(String metadata) {
         AtomicInteger loaded = new AtomicInteger();
-        Object signal = new Object() { @android.webkit.JavascriptInterface public void ready() { loaded.incrementAndGet(); } };
         instrumentation.runOnMainSync(() -> {
             WebView view = activity.browserForTesting();
             WebViewClient original = view.getWebViewClient();
-            view.addJavascriptInterface(signal, "NextEpisodeFixtureLoaded");
             view.setWebViewClient(new WebViewClient() {
                 @Override public WebResourceResponse shouldInterceptRequest(WebView owner, WebResourceRequest request) {
                     if (!request.isForMainFrame()) return null;
                     String html = fixtureHtml + "<script>window.nextEpisodeFixture=true;" + metadata
                             + "window.__INITIAL_STATE__.videoData.bvid=location.pathname.split('/')[2];"
-                            + "addEventListener('load',()=>NextEpisodeFixtureLoaded.ready());</script>";
+                            + "addEventListener('load',()=>{window.nextEpisodeFixtureLoaded=true;});</script>";
                     return new WebResourceResponse("text/html", "UTF-8", new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8)));
                 }
                 @Override public void onPageStarted(WebView owner, String url, Bitmap favicon) { original.onPageStarted(owner, url, favicon); }
-                @Override public void onPageFinished(WebView owner, String url) { original.onPageFinished(owner, url); }
+                @Override public void onPageFinished(WebView owner, String url) {
+                    original.onPageFinished(owner, url);
+                    if(!url.equals(owner.getUrl()))return;
+                    // Media metadata and the document load event can precede
+                    // native fullscreen synchronization. Tap only after both.
+                    owner.evaluateJavascript("(()=>{if(!window.nextEpisodeFixtureLoaded||window.nextEpisodeFixtureFinished)return false;window.nextEpisodeFixtureFinished=true;return true})()",
+                            ready->{if("true".equals(ready))loaded.incrementAndGet();});
+                }
             });
         });
         return loaded;
@@ -507,7 +512,7 @@ public class PlayerControlsInstrumentationTest {
         long deadline = SystemClock.elapsedRealtime() + 15000;
         while (loads.get() == before && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(100);
         assertTrue("Next episode document did not commit", loads.get() > before);
-        await("window.nextEpisodeFixture&&document.querySelector('video').readyState>=2&&" + CONTROLS);
+        await("window.nextEpisodeFixtureFinished&&document.querySelector('video').readyState>=2&&" + CONTROLS);
     }
 
     private void assertImmersiveEpisode() throws Exception {
@@ -829,6 +834,57 @@ public class PlayerControlsInstrumentationTest {
         screenshot("BiliSpeed-player-portrait-video");
     }
 
+    private void qualityFixture() throws Exception {
+        js("window.quality={nowQ:0,realQ:32};window.player={getQuality:()=>({...quality}),seek:t=>{v.currentTime=t;}};"
+                + "const wrap=document.querySelector('.bpx-player-control-wrap');"
+                + "wrap.innerHTML='<div class=\"bpx-player-ctrl-quality\"><span class=\"bpx-player-ctrl-quality-result\">自动</span><ul>'"
+                + "+[0,32,16,112].map(q=>'<li class=\"bpx-player-ctrl-quality-menu-item '+(q===0?'bpx-state-active':'')+'\" data-value=\"'+q+'\">'+(q===0?'自动':q===112?'1080P 大会员':q===32?'480P 标清':'360P 流畅')+'</li>').join('')+'</ul></div>';"
+                + "wrap.querySelectorAll('li').forEach(li=>li.onclick=()=>{window.qualityRequested=li.dataset.value;if(li.dataset.value==='112')return;"
+                + "setTimeout(()=>{quality.nowQ=Number(li.dataset.value);quality.realQ=quality.nowQ||32;v.currentTime=0;"
+                + "wrap.querySelectorAll('li').forEach(e=>e.classList.toggle('bpx-state-active',e===li));"
+                + "wrap.querySelector('.bpx-player-ctrl-quality-result').textContent=li.textContent;},350);});true");
+    }
+    @Test public void touchQualityUsesOfficialFeedbackAndRestoresProgressAndSpeed() throws Exception {
+        qualityFixture();instrumentation.runOnMainSync(()->activity.selectRate(2.5f));
+        await("Math.abs(v.playbackRate-2.5)<.01");
+        for(String value:new String[]{"32","16","0"}) {
+            tap("[data-bilispeed-control=more]");tap("[data-bilispeed-control=more-quality]");
+            js("document.querySelector('[data-quality-option=\""+value+"\"]').scrollIntoView({block:'center',behavior:'instant'});true");
+            SystemClock.sleep(150);
+            tap("[data-quality-option=\""+value+"\"]");
+            await("String(quality.nowQ)==='"+value+"' && document.querySelector('[data-bilispeed-control=quality-status]').textContent.startsWith('已切换')");
+            System.out.println("QUALITY_ACTUAL_"+value+"="+js("JSON.stringify({quality,time:v.currentTime,rate:v.playbackRate,paused:v.paused})"));
+            assertEquals(true,js("String(quality.nowQ)==='"+value+"' && Math.abs(v.currentTime-1)<=.2 && Math.abs(v.playbackRate-2.5)<.01 && v.paused"));
+            click("close-panel");
+        }
+    }
+    @Test public void deniedQualityDoesNotClaimSuccessOrChangeSelectedQuality() throws Exception {
+        qualityFixture();click("more");click("more-quality");click("quality-option");
+        // The first option is auto. Wait for it, then request the permission-gated option.
+        await("document.querySelector('[data-bilispeed-control=quality-status]').textContent.startsWith('已切换')");
+        js("document.querySelector('[data-quality-option=\"112\"]').click();true");
+        assertEquals(true,js("quality.nowQ===0 && document.querySelector('[data-quality-option=\"112\"]').getAttribute('aria-pressed')==='false'"));
+        long deadline=SystemClock.elapsedRealtime()+50000;
+        while(SystemClock.elapsedRealtime()<deadline) {
+            if(Boolean.TRUE.equals(js("document.querySelector('[data-bilispeed-control=quality-status]').textContent.includes('切换未完成')")))return;
+            SystemClock.sleep(200);
+        }
+        fail("Denied quality must provide a retryable failure message");
+    }
+    @Test public void missingOfficialQualityMenuShowsUnavailableState() throws Exception {
+        click("more");click("more-quality");
+        assertEquals(true,js("document.querySelector('#bilispeed-player-panel').textContent.includes('没有提供可选画质') && !document.querySelector('[data-quality-option]')"));
+    }
+    @Test public void changingThemeKeepsThePlayingVideoAndNativeRate() throws Exception {
+        instrumentation.runOnMainSync(()->activity.selectRate(3.5f));
+        js("window.originalVideo=v;v.pause();v.currentTime=1;true");
+        instrumentation.runOnMainSync(()->activity.setThemeMode("dark"));
+        await("document.documentElement.dataset.bilispeedTheme==='dark'");
+        assertEquals(true,js("v===originalVideo && Math.abs(v.currentTime-1)<.2 && Math.abs(v.playbackRate-3.5)<.01"));
+        instrumentation.runOnMainSync(()->activity.setThemeMode("light"));
+        await("document.documentElement.dataset.bilispeedTheme==='light'");
+        assertEquals(true,js("v===originalVideo && Math.abs(v.currentTime-1)<.2 && Math.abs(v.playbackRate-3.5)<.01"));
+    }
     private void assertContained() throws Exception {
         assertTrue((Boolean) js("(function(){var h=document.querySelector('" + HOST + "').getBoundingClientRect();"
                 + "return document.documentElement.scrollWidth<=innerWidth+2 && getComputedStyle(v).objectFit==='contain' && "

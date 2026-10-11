@@ -54,6 +54,9 @@ public class SettingsInstrumentationTest {
     private void launchFixture() throws Exception {
         activity = (MainActivity) instrumentation.startActivitySync(new Intent(context, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        DeviceTestLayout.portrait(instrumentation,activity);
+        String fontScale=InstrumentationRegistry.getArguments().getString("fontScale","");
+        if(!fontScale.isEmpty())assertEquals("Actual system font scale",Float.parseFloat(fontScale),activity.getResources().getConfiguration().fontScale,.01f);
         CountDownLatch committed = new CountDownLatch(1);
         Object bridge = new Object() { @android.webkit.JavascriptInterface public void ready() { committed.countDown(); } };
         String html = "<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -70,7 +73,7 @@ public class SettingsInstrumentationTest {
         });
         try { assertTrue("Settings fixture commit", committed.await(15, TimeUnit.SECONDS)); }
         finally { instrumentation.runOnMainSync(() -> activity.browserForTesting().removeJavascriptInterface("SettingsFixtureLoaded")); }
-        await("window.__BiliSpeed && document.getElementById('v').readyState>=2 && !!document.getElementById('bilispeed-touch-controls')");
+        await("window.__BiliSpeed && document.getElementById('v').readyState>=2 && !!document.getElementById('bilispeed-touch-controls') && innerWidth<600 && innerHeight>innerWidth");
     }
 
     @After public void restore() {
@@ -179,7 +182,7 @@ public class SettingsInstrumentationTest {
         instrumentation.runOnMainSync(() -> {
             assertTrue(activity.settingsForTesting().isShown());
             assertTrue(labeled("B站设置").isSelected());
-            assertFalse(find(activity.getWindow().getDecorView(), "···", false).isShown());
+            assertNull("Obsolete floating menu is no longer constructed", find(activity.getWindow().getDecorView(), "···", false));
         });
         assertTrue((Boolean) js("pageIdentity===originalIdentity && !document.getElementById('v').paused"));
         screenshot("BiliSpeed-1.2.6-settings");

@@ -19,7 +19,10 @@ public class DeviceUiInspectionTest {
         android.app.Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
         Context context = instrumentation.getTargetContext();
         File stop = new File(context.getExternalFilesDir(null), "stop-ui-inspection");
+        File trim = new File(context.getExternalFilesDir(null), "trim-ui-inspection");
         if (stop.exists() && !stop.delete()) throw new IllegalStateException("Stale inspection marker");
+        if (trim.exists() && !trim.delete()) throw new IllegalStateException("Stale memory diagnostic marker");
+        boolean memoryDiagnostic = Boolean.parseBoolean(InstrumentationRegistry.getArguments().getString("inspectionMemoryTrim", "false"));
         int seconds = Integer.parseInt(InstrumentationRegistry.getArguments().getString("inspectionSeconds", "900"));
         MainActivity activity = (MainActivity) instrumentation.startActivitySync(new Intent(context, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
@@ -36,7 +39,14 @@ public class DeviceUiInspectionTest {
         try {
             System.out.println("BILISPEED_USB_INSPECTION_READY");
             long deadline = SystemClock.elapsedRealtime() + seconds * 1000L;
-            while (!stop.exists() && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(200);
+            while (!stop.exists() && SystemClock.elapsedRealtime() < deadline) {
+                if (memoryDiagnostic && trim.exists()) {
+                    instrumentation.runOnMainSync(() -> activity.browserForTesting().clearCache(false));
+                    if (!trim.delete()) throw new IllegalStateException("Memory diagnostic marker cleanup failed");
+                    System.out.println("BILISPEED_DIAGNOSTIC_MEMORY_CACHE_TRIM_APPLIED");
+                }
+                SystemClock.sleep(200);
+            }
         } finally {
             instrumentation.runOnMainSync(() -> {
                 WebView.setWebContentsDebuggingEnabled(false);

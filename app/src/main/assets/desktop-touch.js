@@ -19,6 +19,9 @@
     const commentRoots = new Map();
     const waitingCommentTags = new Set();
     let commentTimer = null;
+    const pendingCommentHosts = new Map();
+    let checkedCommentHosts = new WeakSet();
+    let commentReadyTimer = null;
     const ownElements = '#bilispeed-touch-controls, #bilispeed-seek-feedback, #bilispeed-video-tabs, #bilispeed-touch-style, #bilispeed-player-style, #bilispeed-episodes-style, #bilispeed-episodes, #bilispeed-folder-toggle, [data-bilispeed-image], [data-bilispeed-danmaku-header]';
     const transientPlayerElements = '.bpx-player-dm-wrap, .bpx-player-dm-container, .bpx-player-subtitle-wrap';
     const observation = { childList: true, subtree: true, attributes: true, attributeFilter: ['content', 'data-server-rendered'] };
@@ -90,6 +93,9 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
         grid-auto-rows: auto !important; gap: 18px 10px !important; padding: 0 !important;
     }
     html[${attribute}][data-bilispeed-page="home"] .recommended-swipe { display: none !important; }
+    /* Desktop floor spacing is redundant inside the touch layout's 18px grid. */
+    html[${attribute}][data-bilispeed-page="home"] .recommended-container_floor-aside > .container > :is(.feed-card, .bili-video-card, .floor-single-card, .load-more-anchor) { margin-top: 0 !important; }
+    html[${attribute}][data-bilispeed-page="home"] .bili-video-card__info--tit { min-height: 40px; }
     html[${attribute}] .feed-card,
     html[${attribute}] .bili-feed-card,
     html[${attribute}] .bili-video-card { min-width: 0 !important; width: 100% !important; }
@@ -252,7 +258,8 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
     html[${attribute}] .search-input-el { font-size: 16px !important; }
     html[${attribute}] .search-layout .search-tabs,
     html[${attribute}] .search-layout .search-filter { overflow-x: auto; max-width: 100%; }
-    html[${attribute}] .popular-container { width: 100% !important; min-width: 0 !important; padding: 12px !important; box-sizing: border-box; }
+    html[${attribute}] .popular-container { width: 100% !important; min-width: 0 !important; padding: 0 12px 12px !important; box-sizing: border-box; }
+    html[${attribute}] .popular-container :is(.popular-tips, .popular-video-container .tips) { margin: 8px 0 !important; line-height: 20px !important; }
     html[${attribute}] .popular-container .popular-video-container,
     html[${attribute}] .popular-container .flow-loader,
     html[${attribute}] .popular-container .card-list { width: 100% !important; min-width: 0 !important; display: block !important; }
@@ -269,7 +276,7 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
     html[${attribute}] .popular-container .video-card__info { flex: 1; width: auto !important; min-width: 0 !important; padding: 0 !important; }
     html[${attribute}] .popular-container .video-card__info .video-name { font-size: 14px !important; line-height: 20px !important; }
     html[${attribute}] .popular-container .video-stat { flex-wrap: wrap; gap: 4px 8px; }
-    html[${attribute}] .popular-container .nav-tabs { height: 68px !important; }
+    html[${attribute}] .popular-container .nav-tabs { height: 60px !important; scroll-padding-inline: 12px; overscroll-behavior-x: contain; }
     html[${attribute}] .popular-container .nav-tabs > .nav-tabs__item {
         flex: 1 1 0; min-width: 0; margin: 0 !important; padding: 6px 2px !important; justify-content: center;
     }
@@ -647,6 +654,23 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
         commentTimer = setTimeout(() => { commentTimer = null; commentLayout(); }, 100);
     }
 
+    function waitForCommentRoots() {
+        if (suspended || commentReadyTimer !== null || !pendingCommentHosts.size) return;
+        // attachShadow itself emits no childList mutation. Only check known
+        // unresolved hosts, for at most five seconds; never poll the whole page.
+        commentReadyTimer = setTimeout(() => {
+            commentReadyTimer = null;
+            const now = Date.now();
+            for (const [host, deadline] of pendingCommentHosts) {
+                if (!host.isConnected || host.shadowRoot || now >= deadline) {
+                    pendingCommentHosts.delete(host);
+                    if (host.isConnected && host.shadowRoot) scheduleComments();
+                }
+            }
+            waitForCommentRoots();
+        }, 150);
+    }
+
     function commentLayout() {
         if (suspended) return;
         for (const [root, watcher] of commentRoots) {
@@ -655,12 +679,21 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
         function visit(element) {
             const root = element.shadowRoot;
             if (!root) {
+                if (!checkedCommentHosts.has(element)) {
+                    checkedCommentHosts.add(element);
+                    pendingCommentHosts.set(element, Date.now() + 5000);
+                    waitForCommentRoots();
+                }
                 if (!customElements.get(element.localName) && !waitingCommentTags.has(element.localName)) {
                     waitingCommentTags.add(element.localName);
-                    customElements.whenDefined(element.localName).then(scheduleComments);
+                    customElements.whenDefined(element.localName).then(() => {
+                        checkedCommentHosts = new WeakSet();
+                        scheduleComments();
+                    });
                 }
                 return;
             }
+            pendingCommentHosts.delete(element);
             const css = commentStyles[element.localName];
             if (css && !root.getElementById('bilispeed-comment-style')) {
                 const style = document.createElement('style');
@@ -921,6 +954,8 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
         clearTimeout(hydrationTimer); hydrationTimer = null;
         observer.disconnect();
         clearTimeout(commentTimer); commentTimer = null;
+        clearTimeout(commentReadyTimer); commentReadyTimer = null;
+        pendingCommentHosts.clear(); checkedCommentHosts = new WeakSet();
         commentRoots.forEach(watcher => watcher.disconnect()); commentRoots.clear();
         if (window.__BiliTouchVideo) window.__BiliTouchVideo.setSuspended(suspended);
         if (window.__BiliTouchPlayer) window.__BiliTouchPlayer.setSuspended(suspended);
