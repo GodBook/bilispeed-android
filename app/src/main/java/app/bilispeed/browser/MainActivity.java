@@ -57,6 +57,7 @@ import androidx.webkit.ScriptHandler;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import org.json.JSONObject;
 
@@ -94,6 +95,10 @@ public class MainActivity extends Activity {
     private AppUpdater updater;
     private FrameLayout root;
     private WebView browser;
+    private SwipeRefreshLayout homeRefresh;
+    private boolean pageLoading;
+    private String earlyFailureUrl;
+    private String earlyFailureMessage;
     private FrameLayout fullscreenHost;
     private LinearLayout floating;
     private LinearLayout navigation;
@@ -132,6 +137,7 @@ public class MainActivity extends Activity {
     private boolean keepingScreenOn;
     private int previousOrientation;
     private long lastBlockedMessage;
+    private final Runnable refreshTimeout = this::finishHomeRefresh;
 
     private static final class FrameState {
         JSONObject value;
@@ -238,7 +244,8 @@ public class MainActivity extends Activity {
             return insets;
         });
         browser = createBrowser();
-        root.addView(browser, new FrameLayout.LayoutParams(-1, -1));
+        homeRefresh = createHomeRefresh();
+        root.addView(homeRefresh, new FrameLayout.LayoutParams(-1, -1));
         fullscreenHost = new FrameLayout(this);
         fullscreenHost.setBackgroundColor(Color.BLACK);
         fullscreenHost.setVisibility(View.GONE);
@@ -267,7 +274,7 @@ public class MainActivity extends Activity {
         navigation.setGravity(Gravity.CENTER);
         navigation.setBackgroundColor(Color.WHITE);
         navigation.setElevation(dp(3));
-        String[] labels = {"首页", "热门", "搜索", "动态", "我的", "设置"};
+        String[] labels = {"首页", "热门", "动态", "我的", "设置"};
         for (int index = 0; index < labels.length; index++) {
             final int item = index;
             TextView tab = text(labels[index], 11, MUTED);
@@ -285,14 +292,13 @@ public class MainActivity extends Activity {
             tab.setOnClickListener(view -> {
                 hideInputKeyboard(browser);
                 if (isFullscreenActive()) exitFullscreen();
-                if (item == 5) { showSettings(); return; }
+                if (item == 4) { showSettings(); return; }
                 closeSettings();
                 switch (item) {
                     case 0: browser.loadUrl(HOME); break;
                     case 1: browser.loadUrl("https://www.bilibili.com/v/popular/all"); break;
-                    case 2: showSearch(); break;
-                    case 3: browser.loadUrl("https://t.bilibili.com/"); break;
-                    case 4: browser.loadUrl(MY_PAGE); break;
+                    case 2: browser.loadUrl("https://t.bilibili.com/"); break;
+                    case 3: browser.loadUrl(MY_PAGE); break;
                 }
             });
             navigationItems.add(tab);
@@ -493,35 +499,49 @@ public class MainActivity extends Activity {
                 if (episodeFullscreen && !sameEpisode(url, fullscreenEpisodeUrl)) exitFullscreen();
                 String mapped = desktopUrl(url);
                 if (!mapped.equals(url)) { view.stopLoading(); view.loadUrl(mapped); return; }
+                // Intercepted/fast failed responses can report their error before
+                // Chromium dispatches onPageStarted, including a same-URL reload.
+                String earlyFailure = url.equals(earlyFailureUrl) ? earlyFailureMessage : null;
+                earlyFailureUrl = null;
+                earlyFailureMessage = null;
                 view.getSettings().setMediaPlaybackRequiresUserGesture(!isBiliHttps(url));
                 rememberPageUrl(url);
                 recoveryUrl = null;
-                updateNavigation(url);
+                pageLoading = true;
                 failedNavigation = false;
+                updateNavigation(url);
                 errorPanel.setVisibility(View.GONE);
                 frameStates.clear();
                 progress.setProgress(0);
                 progress.setVisibility(View.VISIBLE);
                 updatePlaybackStatus();
+                if (earlyFailure != null) showPageError(earlyFailure);
             }
             @Override public void onPageFinished(WebView view, String url) {
                 if (destroyed || view != browser) return;
+                pageLoading = false;
+                earlyFailureUrl = null;
+                earlyFailureMessage = null;
+                finishHomeRefresh();
+                updateHomeRefresh(url);
                 progress.setVisibility(View.GONE);
                 notifyTouchFullscreen();
                 injectIntoPage();
                 CookieManager.getInstance().flush();
             }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (!destroyed && view == browser && request.isForMainFrame()) showPageError("检查网络连接，或稍后再试。\n" + error.getDescription());
+                if (!destroyed && view == browser && request.isForMainFrame()) showNavigationError(
+                        request.getUrl().toString(), "检查网络连接，或稍后再试。\n" + error.getDescription());
             }
             @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
                 if (!destroyed && view == browser && request.isForMainFrame() && response.getStatusCode() >= 400) {
-                    showPageError("网站返回 " + response.getStatusCode() + "，请稍后重试。\n可通过菜单重新加载或打开其他视频链接。");
+                    showNavigationError(request.getUrl().toString(), "网站返回 " + response.getStatusCode()
+                            + "，请稍后重试。\n可通过菜单重新加载或打开其他视频链接。");
                 }
             }
             @Override public void onReceivedSslError(WebView view, SslErrorHandler sslHandler, SslError error) {
                 sslHandler.cancel();
-                if (!destroyed && view == browser) showPageError("网站的安全连接未能建立，请检查网络和系统时间。");
+                if (!destroyed && view == browser) showNavigationError(error.getUrl(), "网站的安全连接未能建立，请检查网络和系统时间。");
             }
             @Override public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
                 if (destroyed || view != browser) return;
@@ -598,6 +618,25 @@ public class MainActivity extends Activity {
         return view;
     }
 
+    private SwipeRefreshLayout createHomeRefresh() {
+        SwipeRefreshLayout refresh = new SwipeRefreshLayout(this);
+        refresh.setColorSchemeColors(PINK);
+        refresh.setEnabled(false);
+        refresh.addView(browser, new ViewGroup.LayoutParams(-1, -1));
+        refresh.setOnChildScrollUpCallback((parent, child) -> pageLoading || browser.canScrollVertically(-1));
+        refresh.setOnRefreshListener(() -> {
+            if (refresh != homeRefresh || !refresh.isEnabled() || pageLoading) {
+                refresh.setRefreshing(false);
+                return;
+            }
+            hideInputKeyboard(browser);
+            handler.removeCallbacks(refreshTimeout);
+            handler.postDelayed(refreshTimeout, 20000);
+            reloadPage();
+        });
+        return refresh;
+    }
+
     private void rememberPageUrl(String url) {
         if (url != null && url.length() <= 8192 && isHttps(url)) lastPageUrl = desktopUrl(url);
     }
@@ -607,10 +646,30 @@ public class MainActivity extends Activity {
         else browser.reload();
     }
 
+    private void finishHomeRefresh() {
+        handler.removeCallbacks(refreshTimeout);
+        if (homeRefresh != null) homeRefresh.setRefreshing(false);
+    }
+
+    private void updateHomeRefresh(String url) {
+        if (homeRefresh == null) return;
+        Uri uri = Uri.parse(url == null ? "" : url);
+        String path = uri.getPath();
+        boolean home = "https".equals(uri.getScheme())
+                && ("www.bilibili.com".equals(uri.getHost()) || "bilibili.com".equals(uri.getHost()))
+                && (path == null || path.isEmpty() || path.equals("/"));
+        boolean enabled = home && foreground && !destroyed && !failedNavigation
+                && !settingsShown() && !isFullscreenActive();
+        if (!enabled) finishHomeRefresh();
+        homeRefresh.setEnabled(enabled);
+    }
+
     private void recoverBrowser(WebView failedBrowser) {
         // A dead renderer's WebView cannot be reused, even for reload/saveState.
         // Keep the Activity and app settings, and offer an explicit page retry.
         recoveryUrl = lastPageUrl;
+        earlyFailureUrl = null;
+        earlyFailureMessage = null;
         handler.removeCallbacks(heartbeat);
         frameStates.clear();
         setKeepingScreenOn(false);
@@ -622,12 +681,18 @@ public class MainActivity extends Activity {
             pending.onReceiveValue(null);
         }
         documentScript = null;
+        finishHomeRefresh();
+        // SwipeRefreshLayout caches its target child. Recreate it with the new
+        // WebView so renderer recovery never measures or scrolls the dead one.
+        SwipeRefreshLayout failedRefresh = homeRefresh;
+        failedRefresh.removeView(failedBrowser);
         browser = createBrowser();
-        root.addView(browser, 0, new FrameLayout.LayoutParams(-1, -1));
+        homeRefresh = createHomeRefresh();
+        root.addView(homeRefresh, root.indexOfChild(failedRefresh), failedRefresh.getLayoutParams());
+        root.removeView(failedRefresh);
         exitFullscreen();
         updateBrowserLayout();
         configureBrowser();
-        root.removeView(failedBrowser);
         failedBrowser.destroy();
         showPageError("页面意外关闭，已保留当前链接和倍速设置。\n点击「重新加载」继续浏览。");
         updateNavigation(recoveryUrl);
@@ -1282,12 +1347,13 @@ public class MainActivity extends Activity {
         boolean visible = !isFullscreenActive();
         navigation.setVisibility(visible ? View.VISIBLE : View.GONE);
         int margin = visible ? dp(56) : 0;
-        FrameLayout.LayoutParams content = (FrameLayout.LayoutParams) browser.getLayoutParams();
+        FrameLayout.LayoutParams content = (FrameLayout.LayoutParams) homeRefresh.getLayoutParams();
         content.bottomMargin = margin;
-        browser.setLayoutParams(content);
+        homeRefresh.setLayoutParams(content);
         FrameLayout.LayoutParams error = (FrameLayout.LayoutParams) errorPanel.getLayoutParams();
         error.bottomMargin = margin;
         errorPanel.setLayoutParams(error);
+        updateHomeRefresh(browser.getUrl());
         root.post(this::positionFloating);
     }
 
@@ -1295,28 +1361,23 @@ public class MainActivity extends Activity {
         Uri uri = Uri.parse(url == null ? HOME : url);
         String host = uri.getHost(), path = uri.getPath();
         int selected = -1;
-        if ("search.bilibili.com".equals(host)) selected = 2;
-        else if ("t.bilibili.com".equals(host)) selected = 3;
+        if ("t.bilibili.com".equals(host)) selected = 2;
         else if ("account.bilibili.com".equals(host) || "passport.bilibili.com".equals(host)
                 || "space.bilibili.com".equals(host) || ("www.bilibili.com".equals(host) && path != null
                 && (path.startsWith("/account/") || path.equals("/history") || path.startsWith("/history/") || path.startsWith("/watchlater")
-                || path.equals("/__bilispeed__/me")))) selected = 4;
+                || path.equals("/__bilispeed__/me")))) selected = 3;
         else if ("www.bilibili.com".equals(host) && path != null) {
             if (path.startsWith("/v/popular")) selected = 1;
             else if (path.equals("/") || path.isEmpty()) selected = 0;
         }
-        if (settingsShown()) selected = 5;
+        if (settingsShown()) selected = 4;
         for (int index = 0; index < navigationItems.size(); index++) {
             TextView tab = navigationItems.get(index);
             tab.setSelected(index == selected);
             tab.setTextColor(index == selected ? PINK : MUTED);
             tab.getCompoundDrawables()[1].setTint(index == selected ? PINK : MUTED);
         }
-    }
-
-    static String searchUrl(String keyword) {
-        return Uri.parse("https://search.bilibili.com/all").buildUpon()
-                .appendQueryParameter("keyword", keyword.trim()).build().toString();
+        updateHomeRefresh(url);
     }
 
     private void hideInputKeyboard(View field) {
@@ -1331,41 +1392,6 @@ public class MainActivity extends Activity {
         if (destroyed) return;
         hideInputKeyboard(field);
         if (!settingsShown()) browser.requestFocus();
-    }
-
-    private void showSearch() {
-        EditText input = new EditText(this);
-        input.setSingleLine();
-        input.setHint("搜索视频、UP主或番剧");
-        input.setInputType(InputType.TYPE_CLASS_TEXT);
-        input.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
-        LinearLayout holder = new LinearLayout(this);
-        holder.setPadding(dp(20), dp(10), dp(20), 0);
-        holder.addView(input, new LinearLayout.LayoutParams(-1, -2));
-        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("搜索B站").setView(holder)
-                .setNegativeButton("取消", (ignored, which) -> hideInputKeyboard(input)).setPositiveButton("搜索", null).create();
-        dialog.setOnDismissListener(ignored -> finishTextInput(input));
-        Runnable search = () -> {
-            String keyword = input.getText().toString().trim();
-            if (keyword.isEmpty()) { input.setError("请输入搜索内容"); return; }
-            hideInputKeyboard(input);
-            browser.loadUrl(searchUrl(keyword));
-            dialog.dismiss();
-        };
-        dialog.setOnShowListener(ignored -> {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> search.run());
-            input.requestFocus();
-            dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
-        });
-        input.setOnEditorActionListener((view, action, event) -> {
-            boolean enter = event != null && event.getKeyCode() == android.view.KeyEvent.KEYCODE_ENTER;
-            if (action == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
-                    || enter && event.getAction() == android.view.KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-                search.run(); return true;
-            }
-            return enter;
-        });
-        dialog.show();
     }
 
     private void openExternal(String url) {
@@ -1400,9 +1426,19 @@ public class MainActivity extends Activity {
         return null;
     }
 
+    private void showNavigationError(String url, String message) {
+        if (!pageLoading) {
+            earlyFailureUrl = url;
+            earlyFailureMessage = message;
+        }
+        showPageError(message);
+    }
+
     private void showPageError(String message) {
         if (isFullscreenActive()) exitFullscreen();
         failedNavigation = true;
+        pageLoading = false;
+        updateHomeRefresh(browser.getUrl());
         errorText.setText(message);
         errorPanel.setVisibility(View.VISIBLE);
         progress.setVisibility(View.GONE);
@@ -1539,6 +1575,7 @@ public class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         foreground = true;
+        updateHomeRefresh(browser == null ? null : browser.getUrl());
         if (browser != null) {
             updateDocumentScript();
             browser.onResume();
@@ -1552,6 +1589,7 @@ public class MainActivity extends Activity {
     @Override protected void onPause() {
         if (updater != null) updater.onPause();
         foreground = false;
+        updateHomeRefresh(browser == null ? null : browser.getUrl());
         handler.removeCallbacks(heartbeat);
         if (browser != null) {
             updateDocumentScript();
@@ -1599,7 +1637,7 @@ public class MainActivity extends Activity {
         for (WebView popup : popupWindows) popup.destroy();
         popupWindows.clear();
         frameStates.clear();
-        root.removeView(browser);
+        homeRefresh.removeView(browser);
         browser.stopLoading();
         browser.destroy();
         super.onDestroy();

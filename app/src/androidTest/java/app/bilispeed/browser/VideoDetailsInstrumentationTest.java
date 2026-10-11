@@ -29,9 +29,10 @@ public class VideoDetailsInstrumentationTest {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
         String width = InstrumentationRegistry.getArguments().getString("layoutWidth");
         if (width != null) instrumentation.runOnMainSync(() -> {
-            android.view.ViewGroup.LayoutParams params = activity.browserForTesting().getLayoutParams();
+            android.view.View container = (android.view.View) activity.browserForTesting().getParent();
+            android.view.ViewGroup.LayoutParams params = container.getLayoutParams();
             params.width = Math.round(Integer.parseInt(width) * activity.getResources().getDisplayMetrics().density);
-            activity.browserForTesting().setLayoutParams(params);
+            container.setLayoutParams(params);
         });
     }
     @After public void finish() {

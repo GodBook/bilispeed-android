@@ -74,9 +74,10 @@ public class PlayerControlsInstrumentationTest {
         instrumentation.runOnMainSync(() -> activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));
         String width = InstrumentationRegistry.getArguments().getString("layoutWidth");
         if (width != null) instrumentation.runOnMainSync(() -> {
-            android.view.ViewGroup.LayoutParams params = activity.browserForTesting().getLayoutParams();
+            View container = (View) activity.browserForTesting().getParent();
+            android.view.ViewGroup.LayoutParams params = container.getLayoutParams();
             params.width = Math.round(Integer.parseInt(width) * activity.getResources().getDisplayMetrics().density);
-            activity.browserForTesting().setLayoutParams(params);
+            container.setLayoutParams(params);
         });
         String html = "<!doctype html><meta name='viewport' content='width=1100'>"
                 + "<style>body{margin:0;min-width:1100px}#mirror-vdcon{width:1100px;display:flex}"
@@ -439,9 +440,27 @@ public class PlayerControlsInstrumentationTest {
         Context context = instrumentation.getTargetContext();
         activity = (MainActivity) instrumentation.startActivitySync(new Intent(context, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
-        instrumentation.runOnMainSync(() -> activity.browserForTesting().loadDataWithBaseURL(
-                "https://www.bilibili.com/video/__bilispeed_controls__/", "<!doctype html><script>window.rateRestartFixture=true;</script><video></video>", "text/html", "UTF-8", null));
+        CountDownLatch restarted = new CountDownLatch(1);
+        Object restartSignal = new Object() { @android.webkit.JavascriptInterface public void ready() { restarted.countDown(); } };
+        instrumentation.runOnMainSync(() -> {
+            String width = InstrumentationRegistry.getArguments().getString("layoutWidth");
+            if (width != null) {
+                View container = (View) activity.browserForTesting().getParent();
+                android.view.ViewGroup.LayoutParams params = container.getLayoutParams();
+                params.width = Math.round(Integer.parseInt(width) * activity.getResources().getDisplayMetrics().density);
+                container.setLayoutParams(params);
+            }
+            activity.browserForTesting().addJavascriptInterface(restartSignal, "RateRestartFixtureLoaded");
+            activity.browserForTesting().stopLoading();
+            activity.browserForTesting().loadDataWithBaseURL("https://www.bilibili.com/video/__bilispeed_controls__/",
+                    "<!doctype html><script>window.rateRestartFixture=true;addEventListener('load',()=>RateRestartFixtureLoaded.ready());</script><video></video>",
+                    "text/html", "UTF-8", null);
+        });
+        try { assertTrue("Rate restart fixture commit", restarted.await(15, TimeUnit.SECONDS)); }
+        finally { instrumentation.runOnMainSync(() -> activity.browserForTesting().removeJavascriptInterface("RateRestartFixtureLoaded")); }
         await("window.rateRestartFixture&&window.__BiliSpeed&&window.__BiliSpeed.snapshot().selected===3.5");
+        String width = InstrumentationRegistry.getArguments().getString("layoutWidth");
+        if (width != null) assertEquals(Integer.parseInt(width), ((Number) js("innerWidth")).intValue(), 1);
     }
 
     @Test public void fullscreenSpeedPickerChangesRateWithoutLeavingFullscreenAndStaysOpen() throws Exception {
@@ -496,7 +515,7 @@ public class PlayerControlsInstrumentationTest {
         instrumentation.runOnMainSync(() -> {
             assertTrue(activity.fullscreenForTesting());
             assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, activity.getRequestedOrientation());
-            assertEquals(0, ((android.widget.FrameLayout.LayoutParams) activity.browserForTesting().getLayoutParams()).bottomMargin);
+            assertEquals(0, ((android.widget.FrameLayout.LayoutParams) ((View) activity.browserForTesting().getParent()).getLayoutParams()).bottomMargin);
         });
         assertTrue((Boolean) js("(()=>{var r=document.querySelector('" + HOST + "').getBoundingClientRect();"
                 + "return Math.abs(r.x)<2&&Math.abs(r.y)<2&&Math.abs(r.width-innerWidth)<2&&Math.abs(r.height-innerHeight)<2;})()"));

@@ -152,7 +152,6 @@ public class DesktopLayoutInstrumentationTest {
         assertEquals("https://m.bilibili.com.attacker.test/", MainActivity.desktopUrl("https://m.bilibili.com.attacker.test/"));
         assertEquals("https://m.bilibili.com:8443/", MainActivity.desktopUrl("https://m.bilibili.com:8443/"));
         assertNull(MainActivity.desktopUrl(null));
-        assertEquals("A&B 小猫", android.net.Uri.parse(MainActivity.searchUrl(" A&B 小猫 ")).getQueryParameter("keyword"));
     }
 
     @Test public void oldMobilePreferenceUsesDesktopUaAndTwoTouchableColumns() throws Exception {
@@ -169,7 +168,8 @@ public class DesktopLayoutInstrumentationTest {
                 + "var a=c[0].getBoundingClientRect(),b=c[1].getBoundingClientRect(),d=c[2].getBoundingClientRect();"
                 + "return Math.abs(a.top-b.top)<2 && b.left>a.right && d.top>a.bottom && a.width>140;})()"));
         instrumentation.runOnMainSync(() -> {
-            for (String tab : new String[]{"首页", "热门", "搜索", "动态", "我的"}) {
+            assertNull(label(activity.getWindow().getDecorView(), "搜索"));
+            for (String tab : new String[]{"首页", "热门", "动态", "我的", "设置"}) {
                 TextView item = label(activity.getWindow().getDecorView(), tab);
                 assertNotNull(item);
                 assertTrue(item.isShown() && item.isClickable() && item.getHeight() >= 48

@@ -225,7 +225,8 @@ public class OfficialBilibiliSmokeTest {
         activity = (MainActivity) instrumentation.startActivitySync(new Intent(context, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
         try {
-            instrumentation.runOnMainSync(() -> activity.browserForTesting().loadUrl(MainActivity.searchUrl("哔哩哔哩")));
+            instrumentation.runOnMainSync(() -> activity.browserForTesting().loadUrl(
+                    "https://search.bilibili.com/all?keyword=%E5%93%94%E5%93%A9%E5%93%94%E5%93%A9"));
             await("location.hostname === 'search.bilibili.com' && document.querySelector('.bili-video-card')"
                     + " && document.documentElement.hasAttribute('data-bilispeed-touch')", 35);
             await("document.querySelector('.bili-video-card__info--tit') && document.querySelector('.bili-video-card__info--tit').textContent.length > 2", 35);

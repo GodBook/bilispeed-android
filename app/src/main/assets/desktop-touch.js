@@ -86,12 +86,10 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
     html[${attribute}] .recommended-container_floor-aside > .container {
         display: grid !important; width: 100% !important; min-width: 0 !important;
         grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        grid-template-rows: none !important;
         grid-auto-rows: auto !important; gap: 18px 10px !important; padding: 0 !important;
     }
-    html[${attribute}] .recommended-swipe {
-        grid-column: 1 / -1 !important; grid-row: auto !important;
-        min-width: 0 !important; height: auto !important; aspect-ratio: 16 / 8;
-    }
+    html[${attribute}][data-bilispeed-page="home"] .recommended-swipe { display: none !important; }
     html[${attribute}] .feed-card,
     html[${attribute}] .bili-feed-card,
     html[${attribute}] .bili-video-card { min-width: 0 !important; width: 100% !important; }

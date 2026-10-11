@@ -1,3 +1,19 @@
+# 2026-10-11 1.2.10 首页优化检查点
+
+需求：首页下拉刷新；删除底部搜索按钮；移除首页顶部大型轮播；连接的手机实测后更新 GitHub 和正式 Release。
+
+起点：main / b1f6500，原工作区干净。连接设备 10.93.192.96:5555 / 小米 9 SE / Android 15 API 35，原安装版本 1.2.9。已实现 SwipeRefreshLayout 首页刷新、五项导航与对应图标/选中态、触屏首页隐藏 recommended-swipe。加载、错误、设置、全屏、后台与渲染恢复均接入刷新状态清理，保留电脑原版首页轮播和缩放。版本候选 1.2.10 / versionCode 14，原签名覆盖安装，未清除 Cookies。
+
+构建与 lintRelease 通过（0 errors / 4 项既有 warnings），JavaScript 语法及 git diff --check 通过。最终生产代码取得 101 项回归的逐项通过结果：整组通过 100 项，重启夹具等待信号修正后单独通过 1 项。日志为 device-1.2.10-all-regression.txt（392.474 秒）和 restart-verified.txt（4.386 秒）；实际 320px 的 14 项通过（35.986 秒，320.txt）。原搜索弹窗测试改为网页输入后切换导航的键盘恢复；320px 和全屏夹具适配新容器，重启后也检查实际窄屏宽度。
+
+实站首页 10 个状态通过（home-live-complete.txt）：真实下拉换文档、普通滚动和短拉不刷新、顶部搜索实际得到结果、五项导航 URL/高亮正确。JSON 为 device-1.2.10-live-home-live.json，截图为同前缀 home-*-native.png。前几轮锁屏、空文档读取、截图缓冲区限制和一次无线 ADB 断线的日志保留，不计为通过。脚本只读取页面并使用实际 ADB 输入，没有注入替换版应用脚本。
+
+真实课程另 11 状态通过（live-course.txt），包括全屏连续切集、切集后播放、1.5x 倍速保持与系统返回退出；实站合计 21 状态。已目视核对 live-course-fullscreen-next-p3-native.png，横屏全屏和单行控件正常。
+
+补充修复：HTTP 失败早于 onPageStarted 时保留错误状态，避免刷新失败后错误被清除；渲染进程重建 WebView 时同步重建 SwipeRefreshLayout，清除其缓存的旧子视图。三项真实渲染退出回归通过。最终候选包 1827387 字节 / SHA-256 11F661253F768A3D6AE75CF3AB26E1BC2DC9C5088CBA943A564D86F314869D3B，已拉取手机安装包核对一致，存于 artifacts/tested-1.2.10。生产指纹为 device-1.2.10-source-sha256.json。
+
+偏好保存/恢复日志：saved-unlocked.txt、restored-before-live.txt、saved-before-live.txt、restored-final.txt。实站后恢复成功并删除快照。screen_off_timeout 恢复原值 600000；旋转仍为 accelerometer_rotation=1 / user_rotation=0，没有修改系统旋转或 Wi-Fi。临时检查已结束并移除 tcp9222；24 个生产文件的指纹在实站后核对一致。发布后补充公开附件与正式安装校验。
+
 # 2026-10-10 1.2.9 单行控制栏与全屏切集检查点
 
 需求：播放下栏按钮统一为一行；全屏点击下一集继续保持全屏；使用电脑连接的手机测试，完成后同步 GitHub 与正式 Release。

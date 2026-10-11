@@ -7,9 +7,6 @@ import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.Rect;
 import android.os.SystemClock;
-import android.os.Bundle;
-import android.view.KeyEvent;
-import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -17,9 +14,6 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Switch;
 import android.widget.TextView;
-import android.webkit.WebViewClient;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebResourceResponse;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.test.platform.app.InstrumentationRegistry;
 import org.json.JSONTokener;
@@ -29,8 +23,6 @@ import org.junit.Test;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -156,53 +148,27 @@ public class SettingsInstrumentationTest {
                 .isVisible(WindowInsetsCompat.Type.ime());
     }
 
-    private void dialogAction(String text) {
-        AccessibilityNodeInfo root = instrumentation.getUiAutomation().getRootInActiveWindow();
-        assertNotNull(root);
-        for (AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByText(text)) {
-            if ("android.widget.Button".contentEquals(node.getClassName()) && text.contentEquals(node.getText())) {
-                assertTrue(node.performAction(AccessibilityNodeInfo.ACTION_CLICK)); return;
-            }
-        }
-        fail("Missing dialog action: " + text);
-    }
-
-    @Test public void nativeSearchSubmitEnterAndCancelDismissKeyboardAndRestoreViewport() {
+    @Test public void bottomNavigationDismissesWebKeyboardAndRestoresViewport() throws Exception {
         AtomicReference<Integer> originalHeight = new AtomicReference<>();
-        instrumentation.runOnMainSync(() -> {
-            originalHeight.set(activity.browserForTesting().getHeight());
-            activity.browserForTesting().setWebViewClient(new WebViewClient() {
-                @Override public WebResourceResponse shouldInterceptRequest(android.webkit.WebView view, WebResourceRequest request) {
-                    if (!"search.bilibili.com".equals(request.getUrl().getHost())) return null;
-                    return new WebResourceResponse("text/html", "UTF-8", new ByteArrayInputStream(
-                            "<!doctype html><meta name='viewport' content='width=device-width'><p>本地搜索结果夹具</p>".getBytes(StandardCharsets.UTF_8)));
-                }
-            });
-        });
-        for (String mode : new String[]{"button", "enter", "cancel"}) {
-            tap(labeled("B站搜索"));
-            awaitNative(this::keyboardVisible, "Search must actually show the phone keyboard");
-            AccessibilityNodeInfo input = instrumentation.getUiAutomation().getRootInActiveWindow().findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
-            assertNotNull(input);
-            Bundle text = new Bundle();
-            text.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "Android");
-            assertTrue(input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, text));
-            if (mode.equals("button")) dialogAction("搜索");
-            else if (mode.equals("cancel")) dialogAction("取消");
-            else {
-                long now = SystemClock.uptimeMillis();
-                KeyEvent down = new KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER, 0, 0,
-                        android.view.KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, android.view.InputDevice.SOURCE_KEYBOARD);
-                KeyEvent up = new KeyEvent(now, now + 70, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0, 0,
-                        android.view.KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, android.view.InputDevice.SOURCE_KEYBOARD);
-                assertTrue(instrumentation.getUiAutomation().injectInputEvent(down, true));
-                assertTrue(instrumentation.getUiAutomation().injectInputEvent(up, true));
-            }
-            awaitNative(() -> !keyboardVisible(), "Keyboard remained after " + mode);
-            awaitNative(() -> activity.browserForTesting().getHeight() >= originalHeight.get() - 4, "Viewport stayed compressed after " + mode);
-            awaitNative(() -> MainActivity.searchUrl("Android").equals(activity.browserForTesting().getUrl()), "Search URL changed unexpectedly after " + mode);
-            System.out.println("BILISPEED_NATIVE_SEARCH_FLOW=" + mode + " viewportRestored=true keyboardHidden=true");
+        instrumentation.runOnMainSync(() -> originalHeight.set(activity.browserForTesting().getHeight()));
+        assertNull(find(activity.getWindow().getDecorView(), "B站搜索", true));
+        js("var input=document.createElement('input');input.id='web-input';input.placeholder='搜索视频';"
+                + "input.style.cssText='position:fixed;top:10px;left:10px;width:250px;height:44px;z-index:100000';document.body.append(input);true");
+        int[] origin = new int[2];
+        instrumentation.runOnMainSync(() -> activity.browserForTesting().getLocationOnScreen(origin));
+        float density = context.getResources().getDisplayMetrics().density;
+        long now = SystemClock.uptimeMillis();
+        for (int action : new int[]{MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP}) {
+            MotionEvent event = MotionEvent.obtain(now, SystemClock.uptimeMillis(), action, origin[0]+80*density, origin[1]+30*density, 0);
+            event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            assertTrue(instrumentation.getUiAutomation().injectInputEvent(event, true));
+            event.recycle();
         }
+        awaitNative(this::keyboardVisible, "Web input must actually show the phone keyboard");
+        openSettings();
+        awaitNative(() -> !keyboardVisible(), "Keyboard remained after switching tabs");
+        instrumentation.runOnMainSync(activity::closeSettings);
+        awaitNative(() -> activity.browserForTesting().getHeight() >= originalHeight.get() - 4, "Viewport stayed compressed");
     }
 
     @Test public void settingsTabKeepsPagePlaybackAndScrollAndNeverShowsFloatingButtons() throws Exception {

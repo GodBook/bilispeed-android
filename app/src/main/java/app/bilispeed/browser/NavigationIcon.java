@@ -32,12 +32,10 @@ final class NavigationIcon extends Drawable {
                 path.cubicTo(4, 11, 8, 9, 8, 7); path.lineTo(11, 11); path.cubicTo(14, 8, 13, 5, 13, 3);
                 path.moveTo(12, 14); path.cubicTo(7, 18, 11, 21, 14, 19); break;
             case 2:
-                canvas.drawCircle(10.5f, 10.5f, 7, paint); path.moveTo(16, 16); path.lineTo(21, 21); break;
-            case 3:
                 path.moveTo(4, 6); path.lineTo(4, 20); path.lineTo(20, 20); path.lineTo(20, 6); path.close();
                 path.moveTo(8, 3); path.lineTo(8, 8); path.moveTo(16, 3); path.lineTo(16, 8);
                 path.moveTo(8, 12); path.lineTo(16, 12); path.moveTo(8, 16); path.lineTo(13, 16); break;
-            case 4:
+            case 3:
                 canvas.drawCircle(12, 7, 4, paint); path.moveTo(4, 21); path.cubicTo(4, 11, 20, 11, 20, 21); break;
             default:
                 for (int point = 0; point < 32; point++) {
