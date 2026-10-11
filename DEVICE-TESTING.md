@@ -14,6 +14,10 @@
 
 偏好保存/恢复日志：saved-unlocked.txt、restored-before-live.txt、saved-before-live.txt、restored-final.txt。实站后恢复成功并删除快照。screen_off_timeout 恢复原值 600000；旋转仍为 accelerometer_rotation=1 / user_rotation=0，没有修改系统旋转或 Wi-Fi。临时检查已结束并移除 tcp9222；24 个生产文件的指纹在实站后核对一致。发布后补充公开附件与正式安装校验。
 
+发布完成：[v1.2.10](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.10)，源码/标签 cc35dff1c4d63dc4e42844086b76990368cedc43。正式包 1827387 字节 / SHA-256 1B3DD752244EF3C3FEA080E5585801551C742A3AB92994C29C41C106F9C39D20；77 个 ZIP 条目仅 Git 版本记录与实测候选不同。三个 GitHub 附件摘要、三个匿名公开下载及 latest/update.json 均核对一致，公开下载的正式 APK 已覆盖安装手机并拉取 installed.apk 核对同一哈希，保存在 artifacts/published-1.2.10。
+
+收尾完成：测试 runner 已卸载，正式包无 DEBUGGABLE，当前应用调试 socket 和本任务转发均为 0。原生设置确认恢复 1x，证据为 device-1.2.10-published-settings.xml/png；手机停留在新版首页，最终截图 published-home.png，已目视核对轮播移除和五项导航。最终验收记录另行提交 main，发布标签保持不动。
+
 # 2026-10-10 1.2.9 单行控制栏与全屏切集检查点
 
 需求：播放下栏按钮统一为一行；全屏点击下一集继续保持全屏；使用电脑连接的手机测试，完成后同步 GitHub 与正式 Release。

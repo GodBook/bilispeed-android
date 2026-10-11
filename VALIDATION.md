@@ -20,6 +20,12 @@
 
 实站检查后原偏好恢复成功（device-1.2.10-restored-final.txt），休眠超时恢复 600000，旋转设置仍为 1 / 0，Wi-Fi 未修改。已结束临时检查并移除 tcp9222；24 个生产文件的指纹在实站结束后再次核对一致。
 
+正式发布：[v1.2.10](https://github.com/GodBook/bilispeed-android/releases/tag/v1.2.10)，源码/标签为 cc35dff1c4d63dc4e42844086b76990368cedc43。提交后原签名重建，正式 APK 为 1827387 字节 / SHA-256 1B3DD752244EF3C3FEA080E5585801551C742A3AB92994C29C41C106F9C39D20；与候选的 77 个 ZIP 条目比较，只有 META-INF/version-control-info.textproto 不同，记录指向发布提交（device-1.2.10-release-zip-diff.txt）。签名证书 SHA-256 沿用 E2D8ED51E71288C8F2A0EA81E3F7AC23ABA499D59ED6D7EACE205E78960F94B3。
+
+GitHub latest 已指向 v1.2.10。三个附件的 GitHub 摘要、匿名公开下载和 latest/download/update.json 均核对一致（device-1.2.10-public-verification.txt、github-release.json）；公开文件保存在 artifacts/published-1.2.10。匿名下载的正式 APK 已覆盖安装手机，重新拉取 installed.apk 与上述哈希相同。
+
+正式应用无 DEBUGGABLE，测试 runner 已卸载，当前应用调试 socket=0、本任务 tcp9222=0；原生设置确认恢复的 1x 仍选中。最终手机停留在新版首页，已目视核对 published-home.png，截图和 XML 均带 device-1.2.10- 前缀；cleanup-verified.txt 和 final-cleanup.json 记录收尾结果。此处校验公开更新渠道和正式安装包，没有称为手机内完整在线下载安装流程。最终验收记录另行提交 main，不移动发布标签。
+
 ## 1.2.9：单行控制栏与全屏切集
 
 验收日期：2026-10-10（北京时间）。使用用户连接的小米 9 SE / 10.93.192.96:5555 / Android 15 API 35 / WebView 153 / 1080×2340 / density 440。正常竖屏约 392px，全屏约 821×392 CSS px；320px 检查仅限制同一手机 WebView 宽度，没有修改系统分辨率或密度。保留原签名和 Cookies，旧夹具与实站检查前后分别保存、恢复 playback / updates 偏好。
