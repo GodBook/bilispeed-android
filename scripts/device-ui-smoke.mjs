@@ -1,7 +1,6 @@
-import { connectDevice } from './device-cdp.mjs';
+import { connectDevice, deviceAdb } from './device-cdp.mjs';
 import { writeFile, mkdir } from 'node:fs/promises';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 
 const page = await connectDevice();
 const stage = process.argv[2];
@@ -46,8 +45,8 @@ async function screenshot(name) {
     const result = await page.send('Page.captureScreenshot', { format: 'png' });
     await writeFile('artifacts/device-' + evidencePrefix + name + '-after.png', Buffer.from(result.data, 'base64'));
     if (serial) {
-        execFileSync('adb', ['-s', serial, 'shell', 'screencap', '-p', '/data/local/tmp/bilispeed-preview.png']);
-        execFileSync('adb', ['-s', serial, 'pull', '/data/local/tmp/bilispeed-preview.png', 'artifacts/device-' + evidencePrefix + name + '-native.png'], { stdio: 'ignore' });
+        deviceAdb(serial, ['shell', 'screencap', '-p', '/data/local/tmp/bilispeed-preview.png']);
+        deviceAdb(serial, ['pull', '/data/local/tmp/bilispeed-preview.png', 'artifacts/device-' + evidencePrefix + name + '-native.png'], { stdio: 'ignore' });
     }
 }
 try {

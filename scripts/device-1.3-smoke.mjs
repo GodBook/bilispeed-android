@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
-import { connectDevice } from './device-cdp.mjs';
+import { connectDevice, deviceAdb } from './device-cdp.mjs';
 const serial=process.argv[2];if(!serial)throw new Error('Pass device serial');
 const version=(await readFile(new URL('../version.properties',import.meta.url),'utf8')).match(/^versionName=(.+)$/m)[1].trim();
 const prefix=process.env.BILISPEED_EVIDENCE_PREFIX||version+'-';
 if(!/^[A-Za-z0-9.-]+$/.test(prefix))throw new Error('Invalid evidence prefix');
 const page=await connectDevice(), evidence=[];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
-const adb=args=>execFileSync('adb',['-s',serial,...args],{timeout:30000,maxBuffer:16*1024*1024});
+const adb=args=>deviceAdb(serial,args);
 async function wait(expression,timeout=45000) {
     const end=Date.now()+timeout;
     while(Date.now()<end) {try{if(await page.evaluate(expression))return;}catch(_){}await delay(250);}

@@ -1,4 +1,4 @@
-param([string]$AndroidSdk = 'D:\dev\android-sdk')
+param([string]$AndroidSdk = 'D:\dev\android-sdk', [switch]$AuthenticatedMetadata)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $properties = Get-Content -Raw -LiteralPath (Join-Path $projectRoot 'version.properties') | ConvertFrom-StringData
@@ -9,9 +9,19 @@ $artifacts = Join-Path $projectRoot 'artifacts'
 $destination = Join-Path $artifacts "published-$version"
 New-Item -ItemType Directory -Path $destination -Force | Out-Null
 $headers = @{ 'User-Agent' = 'BiliSpeed-release-verification'; Accept = 'application/vnd.github+json' }
-# Deliberately anonymous: this verifies the channel available to app users.
-$release = Invoke-RestMethod "https://api.github.com/repos/$repository/releases/tags/v$version" -Headers $headers
-$latest = Invoke-RestMethod "https://api.github.com/repos/$repository/releases/latest" -Headers $headers
+# Asset and latest-manifest downloads are always anonymous. Only administrative
+# metadata may use the CLI when the shared anonymous API quota is exhausted.
+if ($AuthenticatedMetadata) {
+    $releaseJson = & gh api "repos/$repository/releases/tags/v$version"
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read tagged release metadata.' }
+    $latestJson = & gh api "repos/$repository/releases/latest"
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read latest release metadata.' }
+    $release = ($releaseJson -join "`n") | ConvertFrom-Json
+    $latest = ($latestJson -join "`n") | ConvertFrom-Json
+} else {
+    $release = Invoke-RestMethod "https://api.github.com/repos/$repository/releases/tags/v$version" -Headers $headers
+    $latest = Invoke-RestMethod "https://api.github.com/repos/$repository/releases/latest" -Headers $headers
+}
 if ($release.draft -or $release.prerelease -or $release.tag_name -cne "v$version" -or $latest.tag_name -cne "v$version") { throw 'The formal release is not the latest public version.' }
 $apkName = "BiliSpeed-$version-Android16.apk"
 $names = @($apkName, 'update.json', 'SHA256SUMS.txt')
@@ -39,7 +49,7 @@ if ((Get-FileHash -LiteralPath $latestManifestPath).Hash -cne (Get-FileHash -Lit
 $buildTools = Get-ChildItem -LiteralPath (Join-Path $AndroidSdk 'build-tools') -Directory | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
 $signature = @(& (Join-Path $buildTools.FullName 'apksigner.bat') verify --verbose --print-certs (Join-Path $destination $apkName))
 if ($LASTEXITCODE -ne 0 -or ($signature -join "`n") -notmatch '(?i)e2d8ed51e71288c8f2a0ea81e3f7ac23aba499d59ed6d7eace205e78960f94b3') { throw 'Public APK signature differs from the original signing identity.' }
-$evidence = [ordered]@{ verifiedAt = (Get-Date).ToString('o'); tag = $release.tag_name; latest = $latest.tag_name; url = $release.html_url; target = $release.target_commitish; assets = @($checks); signature = $signature }
+$evidence = [ordered]@{ verifiedAt = (Get-Date).ToString('o'); metadataAccess = $(if ($AuthenticatedMetadata) { 'authenticated GitHub CLI' } else { 'anonymous GitHub API' }); downloads = 'anonymous public URLs'; tag = $release.tag_name; latest = $latest.tag_name; url = $release.html_url; target = $release.target_commitish; assets = @($checks); signature = $signature }
 $evidence | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $artifacts "device-$version-public-verification.json") -Encoding utf8
 $release | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $artifacts "device-$version-github-release.json") -Encoding utf8
 Write-Output "Verified public release, latest channel, three asset hashes and original signature: $($release.html_url)"

@@ -793,6 +793,23 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
         }
     }
 
+    function updateProgress() {
+        if (suspended || !controls || !video) return;
+        if (controls.dataset.hidden === 'true' && !panel && preview === null && !gesture) return;
+        const canSeek = seekable(video);
+        if (parts.range.disabled === canSeek) parts.range.disabled = !canSeek;
+        const position = preview !== null ? preview : video.currentTime;
+        const progress = String(canSeek ? Math.round(position / video.duration * 1000) : 0);
+        if (parts.range.value !== progress) parts.range.value = progress;
+        const fill = Number(progress) / 10 + '%';
+        if (parts.range.style.getPropertyValue('--bilispeed-seek-progress') !== fill) parts.range.style.setProperty('--bilispeed-seek-progress', fill);
+        setAttribute(parts.range, 'aria-valuetext', timeLabel(position) + ' / ' + timeLabel(video.duration));
+        setText(parts.timeCurrent, video.duration === Infinity ? '直播' : timeLabel(position));
+        setText(parts.timeDuration, video.duration === Infinity ? '' : ' / ' + timeLabel(video.duration));
+        if (parts.time.title !== parts.time.textContent) parts.time.title = parts.time.textContent;
+        setAttribute(parts.time, 'aria-label', parts.time.textContent);
+    }
+
     function update() {
         if (suspended || !controls || !video) return;
         const full = isFullscreen();
@@ -815,14 +832,14 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
         ['previous', 'next'].forEach(direction => {
             const item = parts[direction], target = navigation && navigation[direction];
             if (item.hidden === hasEpisodes) item.hidden = !hasEpisodes;
-            item.disabled = !target;
+            if (item.disabled === !!target) item.disabled = !target;
             setAttribute(item, 'aria-label', (direction === 'previous' ? '上一集' : '下一集') + (target ? '：' + target.title : '，暂无'));
             if (target) setAttribute(item, 'data-episode-url', target.url);
             else item.removeAttribute('data-episode-url');
         });
         const rate = selectedRate();
         const live = video.duration === Infinity;
-        parts.speed.disabled = live;
+        if (parts.speed.disabled !== live) parts.speed.disabled = live;
         setText(parts.speed, (live ? 1 : rate) + 'x');
         setAttribute(parts.speed, 'aria-label', live ? '直播保持 1 倍速' : '播放倍速 ' + rate + 'x，点击调节');
         if (panel === 'speed') parts.presets.querySelectorAll('[data-rate]').forEach(option => {
@@ -831,18 +848,7 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
         const playing = !video.paused && !video.ended;
         setAttribute(parts.playIcon, 'd', playing ? 'M6 5h4v14H6ZM14 5h4v14h-4Z' : 'M8 5v14l11-7Z');
         setAttribute(parts.play, 'aria-label', playing ? '暂停视频' : '播放视频');
-        const canSeek = seekable(video);
-        if (parts.range.disabled === canSeek) parts.range.disabled = !canSeek;
-        const position = preview !== null ? preview : video.currentTime;
-        const progress = String(canSeek ? Math.round(position / video.duration * 1000) : 0);
-        if (parts.range.value !== progress) parts.range.value = progress;
-        const fill = Number(progress) / 10 + '%';
-        if (parts.range.style.getPropertyValue('--bilispeed-seek-progress') !== fill) parts.range.style.setProperty('--bilispeed-seek-progress', fill);
-        setAttribute(parts.range, 'aria-valuetext', timeLabel(position) + ' / ' + timeLabel(video.duration));
-        setText(parts.timeCurrent, video.duration === Infinity ? '直播' : timeLabel(position));
-        setText(parts.timeDuration, video.duration === Infinity ? '' : ' / ' + timeLabel(video.duration));
-        if (parts.time.title !== parts.time.textContent) parts.time.title = parts.time.textContent;
-        setAttribute(parts.time, 'aria-label', parts.time.textContent);
+        updateProgress();
         setText(parts.full, full ? '退出' : '全屏');
         setAttribute(parts.full, 'aria-label', full ? '退出全屏' : '进入全屏');
         const volume = Math.round((video.muted ? 0 : video.volume) * 100);
@@ -891,7 +897,8 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
         bindHost(host);
         if (!managedVideos.has(active)) {
             managedVideos.add(active);
-            ['timeupdate', 'play', 'pause', 'ended', 'loadedmetadata', 'durationchange', 'volumechange', 'ratechange', 'seeking', 'seeked'].forEach(name => {
+            active.addEventListener('timeupdate', () => { if (active === video) updateProgress(); }, { passive: true });
+            ['play', 'pause', 'ended', 'loadedmetadata', 'durationchange', 'volumechange', 'ratechange', 'seeking', 'seeked'].forEach(name => {
                 active.addEventListener(name, () => { if (active === video) { update(); if (name === 'loadedmetadata') updateLayout(); } }, { passive: true });
             });
             ['loadstart', 'emptied'].forEach(name => active.addEventListener(name, () => { if (active === video) { cancelPreview(); if (!qualityRequest) closePanel(); update(); } }, { passive: true }));

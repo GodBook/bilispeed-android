@@ -1,8 +1,7 @@
 // Run against the opt-in DeviceUiInspectionTest, with adb forward tcp:9222.
 // Native taps exercise the installed APK; no replacement app scripts are injected.
-import { connectDevice } from './device-cdp.mjs';
+import { connectDevice, deviceAdb } from './device-cdp.mjs';
 import { readFile, writeFile } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 
 const serial = process.argv[2] || process.env.BILISPEED_TEST_SERIAL;
@@ -52,7 +51,7 @@ async function tap(target) {
     for(let preparation=0;preparation<3;preparation++){
     if (await page.evaluate(`!!${q(target)}?.closest('#bilispeed-touch-controls')&&document.getElementById('bilispeed-touch-controls').dataset.hidden==='true'`)) {
         const [x, y] = await point('.bpx-player-video-area', .5, .25);
-        execFileSync('adb', ['-s', serial, 'shell', 'input', 'tap', String(x), String(y)]);
+        deviceAdb(serial, ['shell', 'input', 'tap', String(x), String(y)]);
         await waitFor('document.getElementById("bilispeed-touch-controls").dataset.hidden==="false"');
     }
     await page.evaluate(`(()=>{
@@ -69,9 +68,22 @@ async function tap(target) {
     // has been sent yet; reveal and remap it before taking the actual action.
     if(!position.hit||!position.visible)continue;
     assert.ok(!position.disabled,'Disabled touch target: '+target);
+    const before = await page.evaluate(`(()=>{window.__BiliDeviceLastTouch=null;document.addEventListener('pointerdown',e=>{window.__BiliDeviceLastTouch={time:performance.now(),trusted:e.isTrusted,matched:!!e.target.closest(${JSON.stringify(target)}),control:e.target.closest('[data-bilispeed-control]')?.dataset.bilispeedControl,target:e.target.tagName,hidden:document.querySelector('#bilispeed-touch-controls')?.dataset.hidden};},{capture:true,once:true});return {url:location.href,document:performance.timeOrigin};})()`);
     const [x, y] = position;
-    execFileSync('adb', ['-s', serial, 'shell', 'input', 'tap', String(x), String(y)]);
+    deviceAdb(serial, ['shell', 'input', 'tap', String(x), String(y)]);
     await delay(250);
+    let after;
+    try { after = await page.evaluate('({url:location.href,document:performance.timeOrigin,touch:window.__BiliDeviceLastTouch})'); }
+    catch (error) { if (/context|navigation|Cannot find/.test(error.message)) return; throw error; }
+    if (after.document !== before.document || after.url !== before.url) return;
+    if (after.touch?.trusted && after.touch.matched === false) {
+        // A touch on the video did not execute the requested button. Let that
+        // single tap settle, then reveal/remap; never repeat a matched action.
+        console.log('MISS native-touch ' + JSON.stringify({target,touch:after.touch}));
+        await delay(450);
+        continue;
+    }
+    assert.ok(after.touch?.trusted && after.touch.matched, 'No matching native touch received: ' + target);
     return;
     }
     throw new Error('Touch target is hidden or obscured: '+target);
@@ -80,8 +92,8 @@ async function tap(target) {
 async function screenshot(name) {
     await delay(300);
     const native = '/data/local/tmp/bilispeed-player-smoke.png';
-    execFileSync('adb', ['-s', serial, 'shell', 'screencap', '-p', native]);
-    execFileSync('adb', ['-s', serial, 'pull', native, `artifacts/device-${prefix}${name}-native.png`], { stdio: 'ignore' });
+    deviceAdb(serial, ['shell', 'screencap', '-p', native]);
+    deviceAdb(serial, ['pull', native, `artifacts/device-${prefix}${name}-native.png`], { stdio: 'ignore' });
 }
 
 async function record(name) {
@@ -173,12 +185,12 @@ try {
         assert.equal(await page.evaluate('document.querySelector("video").paused'), false);
         await record('portrait-second-tap-hides-without-pausing');
         const [x, y] = await point('.bpx-player-video-area', .5, .25);
-        execFileSync('adb', ['-s', serial, 'shell', `input tap ${x} ${y}; input tap ${x} ${y}`]);
+        deviceAdb(serial, ['shell', `input tap ${x} ${y}; input tap ${x} ${y}`]);
         await waitFor('document.querySelector("video").paused&&document.getElementById("bilispeed-touch-controls").dataset.hidden==="false"');
         await record('portrait-double-tap-pauses-once');
         // A four-second real finger drag must outlast the idle timeout.
         const from = await point(selector('seek'), .15, .5), to = await point(selector('seek'), .25, .5);
-        execFileSync('adb', ['-s', serial, 'shell', 'input', 'swipe', ...from.map(String), ...to.map(String), '4000']);
+        deviceAdb(serial, ['shell', 'input', 'swipe', ...from.map(String), ...to.map(String), '4000']);
         assert.equal(await page.evaluate('document.getElementById("bilispeed-touch-controls").dataset.hidden'), 'false');
         await record('portrait-long-seek-keeps-controls');
         await waitFor('document.getElementById("bilispeed-touch-controls").dataset.hidden==="true"');
@@ -205,7 +217,7 @@ try {
         assert.equal(await page.evaluate(q('[data-episode-toggle]') + '.getAttribute("aria-expanded")'), 'true');
         assert.equal(await page.evaluate('document.querySelectorAll("[data-episode-kind=parts] a:not([hidden])").length'), 73);
         const from = await point('.episode-list', .5, .75), to = await point('.episode-list', .5, .25);
-        execFileSync('adb', ['-s', serial, 'shell', 'input', 'swipe', ...from.map(String), ...to.map(String), '450']);
+        deviceAdb(serial, ['shell', 'input', 'swipe', ...from.map(String), ...to.map(String), '450']);
         assert.ok(await page.evaluate(q('.episode-list') + '.scrollTop>0'));
         await tap('.episode-actions button:nth-child(2)');
         assert.equal(await page.evaluate(q('.episode-list') + '.scrollTop'), 0);
@@ -228,7 +240,7 @@ try {
         // A possible Android immersive-mode hint is dismissed by the fixture's
         // existing UiAutomation helper in the instrumentation suite.
         const [x, y] = await point('.bpx-player-video-area', .5, .25);
-        execFileSync('adb', ['-s', serial, 'shell', 'input', 'tap', String(x), String(y)]);
+        deviceAdb(serial, ['shell', 'input', 'tap', String(x), String(y)]);
         await waitFor('document.getElementById("bilispeed-touch-controls").dataset.hidden==="false"');
         await screenshot('course-fullscreen-controls');
         await tap(selector('speed')); await tap('[data-rate="1.5"]');
@@ -247,7 +259,7 @@ try {
         await record('fullscreen-next-p4');
         await tap(selector('previous')); await waitPart(3);
         await screenshot('course-fullscreen-previous-p3'); await record('fullscreen-previous-p3');
-        execFileSync('adb', ['-s', serial, 'shell', 'input', 'keyevent', 'KEYCODE_BACK']);
+        deviceAdb(serial, ['shell', 'input', 'keyevent', 'KEYCODE_BACK']);
         await waitFor('!window.__BILI_TOUCH_FULLSCREEN__&&!document.fullscreenElement&&innerHeight>innerWidth');
         await screenshot('course-exit-fullscreen'); await record('fullscreen-back-restores-portrait');
     } else if (stage === 'boundaries') {
@@ -298,7 +310,7 @@ try {
         await tap(selector('close-panel')); await record('single-video-speed');
     } else throw new Error('Use autohide, course, boundaries, collection-fullscreen, or single');
 } catch (error) {
-    const state=await page.evaluate(`({url:location.href,ready:document.readyState,hidden:document.querySelector('#bilispeed-touch-controls')?.dataset.hidden,navigation:window.__BiliTouchVideo?.getNavigation?.(),video:[...document.querySelectorAll('video')].map(v=>({ready:v.readyState,paused:v.paused,time:v.currentTime})),previous:document.querySelector('[data-bilispeed-control=previous]')?.outerHTML})`).catch(()=>null);
+    const state=await page.evaluate(`({url:location.href,ready:document.readyState,hidden:document.querySelector('#bilispeed-touch-controls')?.dataset.hidden,lastTouch:window.__BiliDeviceLastTouch,navigation:window.__BiliTouchVideo?.getNavigation?.(),video:[...document.querySelectorAll('video')].map(v=>({ready:v.readyState,paused:v.paused,time:v.currentTime})),previous:document.querySelector('[data-bilispeed-control=previous]')?.outerHTML})`).catch(()=>null);
     await writeFile(`artifacts/device-${prefix}player-${stage}-failure.json`,JSON.stringify({message:error.message,lastPoint,state},null,2)+'\n');
     await screenshot('player-' + stage + '-failure').catch(() => {});
     console.error(error); process.exitCode = 1;

@@ -1,8 +1,7 @@
 // Opt-in real website checks on the connected phone; preserves account data and settings.
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
-import { connectDevice } from './device-cdp.mjs';
+import { connectDevice, deviceAdb, requireAppForeground } from './device-cdp.mjs';
 
 const serial = process.argv[2] || process.env.BILISPEED_TEST_SERIAL;
 if (!serial) throw new Error('Pass the connected phone serial');
@@ -10,8 +9,9 @@ const prefix = process.env.BILISPEED_EVIDENCE_PREFIX || '1.2.10-';
 if (!/^[A-Za-z0-9.-]+$/.test(prefix)) throw new Error('Invalid evidence prefix');
 const page = await connectDevice();
 const evidence = [];
+let lastTabTap;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-const adb = args => execFileSync('adb', ['-s', serial, ...args], { timeout: 25000, maxBuffer: 16 * 1024 * 1024 });
+const adb = args => deviceAdb(serial, args, { timeout:25000 });
 async function waitFor(expression) {
     const deadline = Date.now() + 45000;
     while (Date.now() < deadline) {
@@ -38,9 +38,12 @@ async function tapTab(label) {
     const tab = (await nativeUi()).find(tab => tab.label === label);
     assert(tab, 'Missing navigation tab: ' + label);
     const [left, top, right, bottom] = tab.bounds;
+    lastTabTap = { label, bounds:tab.bounds, x:Math.round((left+right)/2), y:Math.round((top+bottom)/2) };
+    console.log('INPUT native-tab ' + JSON.stringify(lastTabTap));
     adb(['shell', 'input', 'tap', String(Math.round((left+right)/2)), String(Math.round((top+bottom)/2))]);
 }
 async function state() {
+    requireAppForeground(serial);
     return page.evaluate(`(()=>{
         const rect = element => { const r=element.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}; };
         return {url:location.href,document:performance.timeOrigin,scroll:scrollY,width:innerWidth,height:innerHeight,
@@ -142,6 +145,11 @@ try {
     await tapTab('首页');
     await waitFor('location.pathname === "/" && document.querySelectorAll(".feed-card .bili-video-card__info--tit").length >= 4');
     await screen('final');
+} catch (error) {
+    try { await screen('failure'); } catch (_) { /* Preserve the original failure if another app owns the display. */ }
+    evidence.push({name:'failure',message:error.message,lastTabTap,
+        focus:adb(['shell','dumpsys','window']).toString().split('\n').filter(line=>/mCurrentFocus|mFocusedApp/.test(line))});
+    throw error;
 } finally {
     await writeFile('artifacts/device-' + prefix + 'home-live.json', JSON.stringify(evidence, null, 2)+'\n');
     page.close();

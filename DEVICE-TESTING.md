@@ -1,4 +1,38 @@
-# 2026-10-14 1.3.1 测试入口
+# 2026-10-14 1.3.2 测试入口
+
+连接手机的完整回归包含 127 项，保存 / 恢复原偏好、字体及旋转设置，保留 Cookies：
+
+```powershell
+.\scripts\build-apk.ps1 -RunTests -DeviceSerial 1944b301 -TestLogName device-1.3.2-final127.txt
+```
+
+新增覆盖深层列表插入内容后的锚点恢复（含引号与方括号链接）、嵌套 Shadow DOM 移除后重新连接、脚本延迟注入后通过缓存原生方法创建的 Shadow DOM，以及进度更新不重复查询字幕、时间与字幕状态仍及时更新。
+
+性能对照使用原版 1.3.1 与候选 1.3.2 的生产 APK，在同一连接手机运行相同的 600 项列表 / 12 批新增内容工作量。先启动受保护检查会话，在另一终端执行探针；标签用实际安装版本标识：
+
+```powershell
+.\scripts\run-device-release-checks.ps1 -DeviceSerial 1944b301 -InspectOnly -InspectionProxy 127.0.0.1:8877
+node scripts/device-overhead-benchmark.mjs 1.3.2-candidate
+adb -s 1944b301 shell touch /sdcard/Android/data/app.bilispeed.browser/files/stop-ui-inspection
+```
+
+探针记录 20 次深层列表定位的 JS 耗时 / 几何读取，新增内容的全节点扫描次数 / 节点数，并检查新视频发现与 Shadow DOM 重新连接。它只添加有限的测试 DOM，不替换应用脚本，不修改账号。测量描述该工作量，不代表整机帧率、耗电或总内存。另用 `node scripts/device-launch-benchmark.mjs 1944b301 1.3.2-candidate` 记录 20 冷 / 20 热原生 Activity 显示时间；热启动的 0ms 表示已有 Activity 被带到前台。
+
+官网触摸检查入口：
+
+```powershell
+.\scripts\run-device-release-checks.ps1 -DeviceSerial 1944b301 -InspectionProxy 127.0.0.1:8877
+```
+
+手机没有默认网络时，先运行 `node scripts/device-network-proxy.mjs`，再执行 `adb -s 1944b301 reverse tcp:8877 tcp:8877`；TLS 仍在官方服务器终止。结束后移除 reverse 并关闭本任务隧道。正式图标通过 Android 应用详情页检查，公开 APK 回装后再次核对实际安装包摘要。
+
+官网工具在 ADB 输入和原生截图前确认本应用位于前台；其他应用的测试占用手机时停止当前阶段，保留失败记录。释放前台后完整复验该阶段，再计入通过。首页失败记录同时保存最后一次原生导航点按与窗口焦点。
+
+播放器工具同时核对可信 pointerdown 的实际目标；自动隐藏造成点按未命中时，只在同一文档 / URL 且明确没有命中目标后重新定位。已匹配动作执行一次，跳转与播放结果继续使用原断言。
+
+最终结果、失败记录和发布校验见 VALIDATION.md。下方为历史测试入口。
+
+# 2026-10-14 1.3.1 测试入口（历史）
 
 连接手机的完整回归入口（保存、恢复原偏好及临时系统设置，保留 Cookies）：
 

@@ -145,6 +145,26 @@ public class PlayerControlsInstrumentationTest {
         fail("Condition timed out: " + condition);
     }
 
+    @Test public void progressEventsAvoidSubtitleQueriesAndKeepTimeCurrent() throws Exception {
+        js("window._subtitleQueries=0;window._subtitleQueryAll=Element.prototype.querySelectorAll;"
+                + "Element.prototype.querySelectorAll=function(selector){if(selector.includes('subtitle-language-item'))_subtitleQueries++;"
+                + "return _subtitleQueryAll.call(this,selector);};"
+                + "var official=document.createElement('div');official.className='bpx-player-ctrl-subtitle';"
+                + "official.innerHTML='<div class=\"bpx-player-ctrl-subtitle-major-content\"><button class=\"bpx-player-ctrl-subtitle-language-item bpx-state-active\" data-lan=\"zh\">中文</button></div>';"
+                + "document.getElementById('bilibili-player').append(official);window.__BiliTouchPlayer.refresh();true");
+        SystemClock.sleep(300);
+        try {
+            js("window._queriesBefore=_subtitleQueries;for(var i=0;i<100;i++)document.getElementById('v').dispatchEvent(new Event('timeupdate'));true");
+            assertEquals("Progress updates must not rediscover subtitle options",true,js("_subtitleQueries===_queriesBefore"));
+            js("document.getElementById('v').currentTime=2;true");
+            await("document.querySelector('[data-bilispeed-control=seek]').getAttribute('aria-valuetext').startsWith('00:02')");
+            js("document.querySelector('.bpx-player-ctrl-subtitle-language-item').classList.remove('bpx-state-active');true");
+            await("document.querySelector('[data-bilispeed-control=subtitles]').getAttribute('aria-pressed')==='false'");
+        } finally {
+            js("Element.prototype.querySelectorAll=_subtitleQueryAll;true");
+        }
+    }
+
     private void click(String name) throws Exception {
         js("document.querySelector('[data-bilispeed-control=\"" + name + "\"]').click();true");
     }

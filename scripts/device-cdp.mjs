@@ -3,6 +3,21 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
+export function requireAppForeground(serial) {
+    const windows = execFileSync('adb', ['-s', serial, 'shell', 'dumpsys', 'window', 'displays'], {encoding:'utf8',timeout:10000});
+    const focus = windows.split('\n').find(line => line.includes('mCurrentFocus=')) || 'No focused window';
+    if (!/mCurrentFocus=.*app\.bilispeed\.browser\//.test(focus)) {
+        throw new Error('Phone foreground changed; stop device inputs: ' + focus.trim());
+    }
+}
+
+export function deviceAdb(serial, args, options = {}) {
+    const operation = String(args[1] || '');
+    if ((args[0] === 'shell' && (operation === 'input' || operation.startsWith('input ')))
+            || (['shell','exec-out'].includes(args[0]) && operation === 'screencap')) requireAppForeground(serial);
+    return execFileSync('adb', ['-s', serial, ...args], {timeout:30000,maxBuffer:16*1024*1024,...options});
+}
+
 export async function connectDevice() {
     const targets = await (await fetch('http://127.0.0.1:9222/json')).json();
     const target = targets.find(page => page.type === 'page' && page.url.includes('bilibili.com')) || targets[0];
@@ -65,8 +80,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
             const y = Math.round(surface.screenY + point.y * scale);
             const serial = deviceSerial || process.env.BILISPEED_TEST_SERIAL || process.env.ANDROID_SERIAL;
             if (!serial) throw new Error('Pass the device serial as the third argument or set BILISPEED_TEST_SERIAL');
-            if (action === 'double-tap') execFileSync('adb', ['-s', serial, 'shell', `input tap ${x} ${y}; input tap ${x} ${y}`]);
-            else execFileSync('adb', ['-s', serial, 'shell', 'input', 'tap', String(x), String(y)]);
+            if (action === 'double-tap') deviceAdb(serial, ['shell', `input tap ${x} ${y}; input tap ${x} ${y}`]);
+            else deviceAdb(serial, ['shell', 'input', 'tap', String(x), String(y)]);
             console.log(JSON.stringify({ css: point, device: { x, y } }));
         }
         else if (action === 'screenshot') {

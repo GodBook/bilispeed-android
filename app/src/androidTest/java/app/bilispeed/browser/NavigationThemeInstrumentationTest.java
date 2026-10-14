@@ -104,6 +104,20 @@ public class NavigationThemeInstrumentationTest {
         instrumentation.runOnMainSync(navigation);
         assertTrue("History document committed",committed.await(15,TimeUnit.SECONDS));
     }
+    @Test public void deepListRestoresEscapedAnchorAfterContentInsertion() throws Exception {
+        js("var list=document.createElement('main');"
+                + "for(var i=0;i<600;i++){var a=document.createElement('a');a.href='/video/BVfixture'+i;"
+                + "a.textContent='Video '+i;a.style.cssText='display:block;height:70px';list.append(a);}"
+                + "document.body.replaceChildren(list);scrollTo(0,35000);true");
+        SystemClock.sleep(200);
+        js("window._anchor=document.elementFromPoint(innerWidth/4,Math.min(120,innerHeight/4)).closest('a');"
+                + "_anchor.setAttribute('href','/video/BVfixture?label=\"quoted\"&part=[2]');"
+                + "window._savedPosition={y:scrollY,anchor:_anchor.getAttribute('href'),offset:_anchor.getBoundingClientRect().top};"
+                + "var banner=document.createElement('div');banner.style.height='180px';document.querySelector('main').prepend(banner);"
+                + "scrollTo(0,0);window.__BiliBrowserState.restore(_savedPosition);true");
+        await("Math.abs(_anchor.getBoundingClientRect().top-_savedPosition.offset)<2 && Math.abs(scrollY-35180)<2");
+    }
+
     @Test public void returningFromVideoRestoresStableListWithin32Pixels() throws Exception {
         scroll(620); load(video);
         returnTo(home,activity::onBackPressed);

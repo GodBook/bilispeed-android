@@ -4,13 +4,13 @@
 
 [下载已发布 APK](https://github.com/GodBook/bilispeed-android/releases/latest) · [源码](https://github.com/GodBook/bilispeed-android)
 
-当前正式版本为 **[1.3.1 / versionCode 16](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.1)**，公开 APK 已覆盖安装连接手机并核对哈希。竖屏控制条和进度条约 3 秒无操作后自动隐藏，单击画面唤出或收起；拖动与打开设置面板时保持显示。细进度轨道、统一图标、按钮按压反馈和轻量面板动效让触摸操作更自然，保留完整点击区域并支持减少动态效果。修正长标题下授权说明与操作栏重叠。沿用统一主题、列表保位、五项底部导航、顶部搜索、列表下拉刷新和全屏连续切集。手机实测范围、失败记录及正式附件校验见 [VALIDATION.md](VALIDATION.md)。
+当前版本为 **[1.3.2 / versionCode 17](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.2)**。应用图标更换为蓝色玻璃质感电视图案，支持自适应形状和 Android 主题图标。长列表保位优先定位屏幕内卡片，新增网页内容只查询媒体节点，播放进度更新减少重复字幕查询及按钮刷新。沿用竖屏控制条自动隐藏、单击显隐、双击暂停 / 播放、统一主题、五项底部导航、下拉刷新及全屏连续切集。手机实测范围、性能对照与正式附件校验见 [VALIDATION.md](VALIDATION.md)。
 
 ## 安装与使用
 
 从[最新 Releases](https://github.com/GodBook/bilispeed-android/releases/latest)下载APK，传到手机后覆盖安装；如系统询问，允许当前文件管理器安装此APK。无需root，也不会替换官方B站App。已有1.1.x或1.2.x可在应用内检查更新；已有1.0.0时先手动覆盖安装，即可获得在线更新入口。
 
-1.3.1 使用原签名，可以覆盖安装旧版，保留设置与已有 Cookies。本机安装包位于 `artifacts/BiliSpeed-1.3.1-Android16.apk`。
+1.3.2 使用原签名，可以覆盖安装旧版，保留设置与已有 Cookies。本机安装包位于 `artifacts/BiliSpeed-1.3.2-Android16.apk`。
 
 本版的连接手机、回归和正式包验证结果见 VALIDATION.md；复现命令见 DEVICE-TESTING.md。Android 16 模拟器结果保留在历史版本记录中。
 
@@ -41,6 +41,7 @@
 - 系统恢复页面时保留倍速；页面历史状态超过 256 KiB 时保留当前 HTTPS 链接并重新加载，避免切后台崩溃。
 - 网页渲染进程退出时保留应用、当前 HTTPS 链接、倍速和已有 Cookies，显示「重新加载」入口；失效的全屏和文件选择请求会退出。尚未点击重试时切后台，仍会保存待恢复的链接。
 - 触屏布局与倍速控制过滤播放控件、字幕和弹幕的频繁变化；全屏控件隐藏时停止更新不可见的进度文字和无障碍属性，显示时同步。倍速与前后台状态通过小消息更新，页面缺少脚本时才完整注入；切到后台时停止排版与字幕观察，返回后重新发现播放器和同步控件。
+- 长列表保存位置时优先从可见卡片取锚点，恢复时按链接直接查找，并合并相同位置消息与重复触摸通知。媒体发现通过视频 / iframe 查询及开放 Shadow DOM 登记处理新增节点，弱引用不阻止已移除子树回收；不支持弱引用或延迟注入的 WebView 保留完整扫描。进度事件只更新进度与时间，其他状态由播放、倍速、音量、字幕和全屏事件同步。
 - B 站网页可按播放器设置自动播放，切到后台会持续暂停视频，并阻止延迟播放和新视频自动播放；返回后可手动继续。其他网站保持手动触发播放。
 - 升级后即使旧版设置为手机网页，也会使用电脑端；倍速、字幕外观与已有 Cookies 沿用。旧版浮钮位置偏好保留，但本版不显示浮钮。
 - 「我的」的登录、编辑资料、空间、历史记录、我的收藏和稍后再看继续打开官方页面。登录表单优先展示密码和短信登录，适合在同一部手机上操作。个人页使用统一主题；「离线缓存」入口直接标注暂不支持，点击可查看说明。
@@ -108,7 +109,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-apk.ps1
 
 播放器专项还覆盖单指滑动与双击、取消手势、音量和静音恢复、字幕选择、全屏自动隐藏、按住滑杆、换视频、横竖屏、竖向视频比例，以及按钮外观的即时更新、持久化与恢复默认。1.2.3 分轮验证 45 项取得通过结果，包括 320px 窄屏、真实渲染进程恢复和 B 站实站操作；账号字幕资源、实体设备和逐档实际倍速计时限制见 VALIDATION.md。
 
-构建脚本通过 ADB 检查设备并保存/恢复原偏好及临时系统设置；测试包会复制到英文临时路径，避免 Windows 安卓工具对中文项目路径的兼容问题。结果默认保存在 `artifacts/instrumentation-tests.txt`，可用 `-TestLogName` 指定独立日志。1.3.0默认核心集合120项，字体与TalkBack复现入口见 DEVICE-TESTING.md。
+构建脚本通过 ADB 检查设备并保存/恢复原偏好及临时系统设置；测试包会复制到英文临时路径，避免 Windows 安卓工具对中文项目路径的兼容问题。结果默认保存在 `artifacts/instrumentation-tests.txt`，可用 `-TestLogName` 指定独立日志。1.3.2 默认核心集合 127 项；性能、字体与 TalkBack 复现入口见 DEVICE-TESTING.md。原始图标位于 `assets/app-icon-source.png`，使用 Pillow 运行 `scripts/generate-launcher-icons.py` 可重新生成彩色图标资源。
 
 额外验证真实 B 站电脑端首页、竖屏布局和公开视频的 5x 播放，并保存界面截图（需要设备能够联网）：
 
@@ -128,22 +129,22 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-apk.ps1
 
 ## 发布后续更新
 
-1. 在 version.properties 递增 versionCode 并更新 versionName，例如 16 / 1.3.1。
+1. 在 version.properties 递增 versionCode 并更新 versionName，例如 17 / 1.3.2。
 2. 修改 release-notes.md，使用原来的 .signing 密钥构建并验证 APK。
 3. 提交已验证的源码，再从该提交重新构建正式 APK，确保包内的源码版本记录与发布标签一致。推送源码和标签后，发布三个 Release 附件：
 
 ~~~powershell
 .\scripts\build-apk.ps1 -RunTests -DeviceSerial emulator-5580
 git add .
-git commit -m "Release 1.3.1"
+git commit -m "Release 1.3.2"
 .\scripts\build-apk.ps1
-git tag v1.3.1
-git push origin main v1.3.1
+git tag v1.3.2
+git push origin main v1.3.2
 .\scripts\publish-release.ps1
 ~~~
 
 发布脚本需要已登录的 GitHub CLI；它校验 APK 与更新信息是否一致，并创建最新正式 Release，不替换已有版本。预发布测试可用 -Draft，草稿不会进入在线更新渠道。无需把签名密钥上传 GitHub。
 
-提交后重建可用 `scripts/compare-release-apks.ps1 -TestedApk <已验收包> -ReleaseApk <正式包>` 逐条目核对，只允许源码版本元数据不同。发布后运行 `scripts/verify-published-release.ps1` 匿名下载三个附件和latest更新信息，核对摘要、大小及原签名；正式安装仍需另行核对手机实际包。
+提交后重建可用 `scripts/compare-release-apks.ps1 -TestedApk <已验收包> -ReleaseApk <正式包>` 逐条目核对，只允许源码版本元数据不同。发布后运行 `scripts/verify-published-release.ps1` 匿名下载三个附件和 latest 更新信息，核对摘要、大小及原签名；匿名 GitHub API 额度不足时可用 `-AuthenticatedMetadata`，仅元数据读取改用已登录 CLI，附件及更新渠道仍匿名下载。正式安装仍需另行核对手机实际包。
 
 本机若 GitHub CLI 因 HTTP/2 网络代理报 EOF，可先设置会话环境变量：$env:GODEBUG = 'http2client=0'。

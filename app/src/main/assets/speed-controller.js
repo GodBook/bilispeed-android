@@ -16,6 +16,12 @@
     const bound = new WeakSet();
     const roots = new WeakSet();
     const frames = new WeakSet();
+    const shadowReferences = new Set();
+    const registeredShadows = new WeakSet();
+    // Late injection may follow site code that cached native attachShadow.
+    // Retain subtree discovery there, as well as on engines without WeakRef.
+    const tracksShadows = typeof WeakRef === 'function' && document.readyState === 'loading';
+    let shadowBootstrapComplete = false;
     const animatedOverlays = '#bilispeed-touch-controls, #bilispeed-seek-feedback, '
         + '.bpx-player-dm-wrap, .bpx-player-dm-container, .bpx-player-subtitle-wrap';
     const prototype = HTMLMediaElement.prototype;
@@ -211,9 +217,13 @@
         if (root.tagName === 'VIDEO') bind(root);
         if (root.tagName === 'IFRAME') bindFrame(root);
         if (root.querySelectorAll) {
-            root.querySelectorAll('*').forEach(element => {
+            root.querySelectorAll('video,iframe').forEach(element => {
                 if (element.tagName === 'VIDEO') bind(element);
                 if (element.tagName === 'IFRAME') bindFrame(element);
+            });
+            // Discover pre-existing open roots once. New roots are registered
+            // by attachShadow, including detached roots that reconnect later.
+            if (!shadowBootstrapComplete || !tracksShadows) root.querySelectorAll('*').forEach(element => {
                 if (element.shadowRoot) watch(element.shadowRoot);
             });
         }
@@ -221,9 +231,13 @@
     }
 
     function watch(root) {
-        discover(root);
         if (roots.has(root)) return;
         roots.add(root);
+        if (tracksShadows && root.host && !registeredShadows.has(root)) {
+            registeredShadows.add(root);
+            shadowReferences.add(new WeakRef(root));
+        }
+        discover(root);
         // Native autoplay does not call the JavaScript play() method.
         root.addEventListener('play', blockBackgroundPlay, true);
         const observer = new MutationObserver(records => {
@@ -261,6 +275,11 @@
                 observers.delete(root);
                 roots.delete(root);
             }
+        });
+        shadowReferences.forEach(reference => {
+            const root = reference.deref();
+            if (!root) shadowReferences.delete(reference);
+            else if (root.host.isConnected && !roots.has(root)) watch(root);
         });
     }
 
@@ -365,6 +384,7 @@
     });
 
     watch(document);
+    shadowBootstrapComplete = true;
     document.addEventListener('DOMContentLoaded', scheduleReport, { once: true });
     document.addEventListener('visibilitychange', () => {
         // WebView can be hidden while its custom fullscreen video is still visible.

@@ -3,13 +3,34 @@
     if (window !== top || window.__BiliBrowserState) return;
     let scrollTimer = null;
     let restoration = null;
+    let lastPosition = '';
     const send = data => { try { window.BiliSpeedBridge?.postMessage(JSON.stringify(data)); } catch (_) {} };
+    const cardSelector = 'a[href*="/video/"],.video-card a[href],.bili-dyn-item';
+    function visibleCard() {
+        // Hit testing starts with painted content, so a deep list does not need
+        // hundreds of geometry reads for cards above the viewport on every tap.
+        for (const y of [Math.min(120, innerHeight / 4), innerHeight / 2, innerHeight * .75]) {
+            for (const x of [innerWidth * .25, innerWidth * .75]) {
+                for (const element of document.elementsFromPoint(x, y)) {
+                    const card = element.closest(cardSelector);
+                    if (card) return card;
+                }
+            }
+        }
+        // Pages with unusual overlays or sparse layouts still save an anchor.
+        for (const card of document.querySelectorAll(cardSelector)) {
+            const r = card.getBoundingClientRect();
+            if (r.height > 0 && r.bottom > 0 && r.top < innerHeight) return card;
+        }
+        return null;
+    }
     function position() {
         if (!document.body || restoration) return;
-        const card = [...document.querySelectorAll('a[href*="/video/"],.video-card a[href],.bili-dyn-item')]
-            .find(e => { const r=e.getBoundingClientRect();return r.height>0 && r.bottom>0 && r.top<innerHeight; });
-        send({ type:'page-position', url:location.href, y:scrollY,
-            anchor:card?.getAttribute('href') || '', offset:card?.getBoundingClientRect().top || 0 });
+        const card = visibleCard();
+        const value = { type:'page-position', url:location.href, y:scrollY,
+            anchor:card?.getAttribute('href') || '', offset:card?.getBoundingClientRect().top || 0 };
+        const message = JSON.stringify(value);
+        if (message !== lastPosition) { lastPosition = message; send(value); }
     }
     function blocked(target) {
         if (document.querySelector('dialog[open],[aria-modal="true"],.bpx-player-dm-setting-wrap[data-bilispeed-danmaku-open]')) return true;
@@ -23,8 +44,9 @@
         return false;
     }
     function gesture(event) { send({type:'refresh-gesture',url:location.href,blocked:blocked(event.target)}); }
-    document.addEventListener('pointerdown', event => { cancelRestore(); gesture(event); position(); }, true);
-    document.addEventListener('touchstart', gesture, {capture:true,passive:true});
+    document.addEventListener(window.PointerEvent ? 'pointerdown' : 'touchstart', event => {
+        cancelRestore(); gesture(event); position();
+    }, {capture:true,passive:true});
     document.addEventListener('focusin', event => gesture(event));
     function cancelRestore() { if (restoration) { clearTimeout(restoration.timer); restoration=null; } }
     function restore(value) {
@@ -35,7 +57,8 @@
             if (restoration!==work) return;
             let y=value.y, found=false;
             if (value.anchor) {
-                const anchor=[...document.querySelectorAll('a[href]')].find(e=>e.getAttribute('href')===value.anchor && e.getBoundingClientRect().height>0);
+                const anchor=[...document.querySelectorAll('a[href="'+CSS.escape(value.anchor)+'"]')]
+                    .find(e=>e.getBoundingClientRect().height>0);
                 if (anchor) { y=anchor.getBoundingClientRect().top+scrollY-value.offset; found=true; }
             }
             scrollTo({top:y,behavior:'instant'});

@@ -143,9 +143,13 @@ public class PlaybackInstrumentationTest {
     }
 
     private Object js(String script) throws Exception {
+        return js(activity.browserForTesting(),script);
+    }
+
+    private Object js(WebView target, String script) throws Exception {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<String> value = new AtomicReference<>();
-        instrumentation.runOnMainSync(() -> activity.browserForTesting().evaluateJavascript(script, result -> {
+        instrumentation.runOnMainSync(() -> target.evaluateJavascript(script, result -> {
             value.set(result); latch.countDown();
         }));
         assertTrue("JavaScript callback timed out: " + script.substring(0, Math.min(script.length(), 100)), latch.await(6, TimeUnit.SECONDS));
@@ -310,6 +314,53 @@ public class PlaybackInstrumentationTest {
         await("document.getElementById('host').shadowRoot.querySelector('video').readyState >= 2", 15000);
         assertEquals(4, ((Number) js("document.getElementById('host').shadowRoot.querySelector('video').playbackRate")).doubleValue(), 0.001);
         assertEquals(2, snapshot().getInt("videos"));
+    }
+
+    @Test public void detachedNestedShadowMediaIsRediscoveredAfterReconnection() throws Exception {
+        choose(2.5f);
+        js("window._mediaBefore=window.__BiliSpeed.snapshot().videos;"
+                + "window._detachedHost=document.createElement('div');"
+                + "var outer=_detachedHost.attachShadow({mode:'open'});outer.append(document.createElement('video'));"
+                + "var inner=document.createElement('div');outer.append(inner);"
+                + "inner.attachShadow({mode:'open'}).append(document.createElement('video'));"
+                + "document.body.append(_detachedHost);true");
+        await("window.__BiliSpeed.snapshot().videos===_mediaBefore+2",5000);
+        js("_detachedHost.remove();true");
+        await("window.__BiliSpeed.snapshot().videos===_mediaBefore",5000);
+        SystemClock.sleep(1700);
+        js("document.body.append(_detachedHost);true");
+        await("window.__BiliSpeed.snapshot().videos===_mediaBefore+2",5000);
+        choose(3.5f);
+        assertEquals(true,js("_detachedHost.shadowRoot.querySelector('video').playbackRate===3.5 && "
+                + "_detachedHost.shadowRoot.querySelector('div').shadowRoot.querySelector('video').playbackRate===3.5"));
+    }
+
+    @Test public void lateInjectionFindsShadowsCreatedWithCachedNativeMethod() throws Exception {
+        AtomicReference<WebView> probe=new AtomicReference<>();
+        instrumentation.runOnMainSync(()->{
+            WebView view=new WebView(activity);view.getSettings().setJavaScriptEnabled(true);probe.set(view);
+            view.loadDataWithBaseURL(MainActivity.HOME,"<!doctype html><body><script>"
+                    + "window.cachedAttachShadow=Element.prototype.attachShadow;"
+                    + "var host=document.createElement('div');document.body.append(host);"
+                    + "cachedAttachShadow.call(host,{mode:'open'}).append(document.createElement('video'));"
+                    + "</script>","text/html","UTF-8",null);
+        });
+        try {
+            long deadline=SystemClock.elapsedRealtime()+10000;
+            while(SystemClock.elapsedRealtime()<deadline && !Boolean.TRUE.equals(js(probe.get(),"document.readyState==='complete' && !!window.cachedAttachShadow"))) SystemClock.sleep(50);
+            assertEquals(true,js(probe.get(),"document.readyState==='complete' && !!window.cachedAttachShadow"));
+            String controller;
+            try(InputStream input=instrumentation.getTargetContext().getAssets().open("speed-controller.js")) {
+                controller=new String(input.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
+            }
+            js(probe.get(),controller);
+            assertEquals(1,((Number)js(probe.get(),"window.__BiliSpeed.snapshot().videos")).intValue());
+            js(probe.get(),"var subtree=document.createElement('section'),nested=document.createElement('div');subtree.append(nested);"
+                    + "cachedAttachShadow.call(nested,{mode:'open'}).append(document.createElement('video'));document.body.append(subtree);true");
+            deadline=SystemClock.elapsedRealtime()+5000;
+            while(SystemClock.elapsedRealtime()<deadline && ((Number)js(probe.get(),"window.__BiliSpeed.snapshot().videos")).intValue()!=2) SystemClock.sleep(50);
+            assertEquals(2,((Number)js(probe.get(),"window.__BiliSpeed.snapshot().videos")).intValue());
+        } finally { instrumentation.runOnMainSync(()->probe.get().destroy()); }
     }
 
     @Test public void remembersAcrossLaunchAndCanDisableRemembering() throws Exception {

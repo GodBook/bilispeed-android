@@ -299,10 +299,17 @@ public class DesktopLayoutInstrumentationTest {
                 + "<div class='home-dialy-exp-item'>观看视频</div></div><form class='user-setting-warp'><div class='el-form-item'>"
                 + "<label class='el-form-item__label'>昵称</label><div class='el-form-item__content'><div class='el-input'>"
                 + "<input id='nickname' value='测试账号'></div></div></div></form></div></div></div></div>";
+        CountDownLatch accountCommitted = new CountDownLatch(1);
+        Object accountLoaded = new Object() {
+            @android.webkit.JavascriptInterface public void ready() { accountCommitted.countDown(); }
+        };
+        String readyHtml = html + "<script>document.addEventListener('DOMContentLoaded',()=>AccountFixtureLoaded.ready(),{once:true});</script>";
         instrumentation.runOnMainSync(() -> {
             activity.browserForTesting().stopLoading();
-            activity.browserForTesting().loadDataWithBaseURL("https://account.bilibili.com/account/home", html, "text/html", "UTF-8", null);
+            activity.browserForTesting().addJavascriptInterface(accountLoaded,"AccountFixtureLoaded");
+            activity.browserForTesting().loadDataWithBaseURL("https://account.bilibili.com/account/home", readyHtml, "text/html", "UTF-8", null);
         });
+        assertTrue("Account fixture document committed",accountCommitted.await(12,TimeUnit.SECONDS));
         await("document.documentElement.dataset.bilispeedPage==='account' && document.querySelector('.security-left') && innerWidth<600 && innerHeight>innerWidth");
         assertTrue((Boolean) js("['.security_content','.security-right','.home-right','.home-top-msg-name','#nickname'].every(function(s){"
                 + "var r=document.querySelector(s).getBoundingClientRect();return r.width>50&&r.left>=0&&r.right<=innerWidth+1;})"));

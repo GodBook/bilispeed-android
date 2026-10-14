@@ -1,4 +1,48 @@
-# Android 16 验收记录
+# Android 验收记录
+
+## 1.3.2：新图标与运行开销优化
+
+验收日期：2026-10-14（北京时间）。使用 USB `1944b301` / 小米 9 SE / Android 15 API 35 / WebView 153.0.8010.36 / 1080×2340 / density 440。本次没有另行运行 Android 16 模拟器；APK 的 targetSdk 为 36，minSdk 为 26。
+
+最终测试 APK 为 **1.3.2 / code17，2131604 字节，SHA-256 `298D28291F2DB3DBFD9E593CDF7E8880F0FCF0B355846213254E8E948FFA600C`**，归档于 `artifacts/tested-1.3.2-final`。36 个生产 / 构建文件及原图的指纹为 `artifacts/device-1.3.2-final-source-sha256.json`，专项复验后逐项核对未变。
+
+| 检查 | 结果 | 主要证据（artifacts 下） |
+| --- | --- | --- |
+| 最终生产包核心集合 | 127 项去重均有通过结果：整组 126/127（544.014s），个人中心夹具一次页面回调超时；补充文档就绪信号后专项 1/1（2.544s），APK 哈希保持一致 | device-1.3.2-final127.txt、final-account.txt |
+| 实际 320px 窄屏 | 5/5（36.366s），含自动隐藏、按住进度保护、单行控件与新增进度 / 字幕同步 | device-1.3.2-final-320.txt |
+| 官网真实操作 | 56 个状态分阶段全部通过：首页 10、自动隐藏 10、课程 11、单视频 2、边界 3、全屏合集 5、导航 / 主题 / 画质 9、深色页面 6 | device-1.3.2-live-all-attempt3.txt、live-from-course-final.txt；各阶段 JSON / native.png |
+| 新图标 | 系统应用信息页显示新的蓝色电视图标，目视核对主体与遮罩；首页、竖屏控件及深色全屏画质截图已核对 | device-1.3.2-icon-app-info.png、home-final-native.png、portrait-tap-controls-native.png、quality-fullscreen.png |
+| 相同 DOM 工作量 | 20 次列表定位、12 批新增内容；新视频、开放 Shadow DOM 及移除后重新连接均成功发现 | device-1.3.1-baseline-overhead.json、device-1.3.2-candidate-overhead.json |
+| 原生 Activity 显示 | 两组各 20 冷 / 20 热启动完成 | device-1.3.1-baseline-native-launch.json、device-1.3.2-candidate-native-launch.json |
+| 构建与静态检查 | release、JS / PowerShell 语法、git diff --check 通过；lint 0 errors / 4 warnings（3 项既有，1 项为自适应 XML 与密度位图并存提示） | device-1.3.2-final-account-build.txt、lint-results-release.txt |
+| 原签名覆盖安装 | 原 SHA-256 证书 `e2d8ed51e71288c8f2a0ea81e3f7ac23aba499d59ed6d7eace205e78960f94b3`，主应用不卸载、不清除 Cookies | build-apk.ps1 / apksigner verify |
+
+同机固定工作量的对照：
+
+| 指标 | 原版 1.3.1 | 1.3.2 |
+| --- | --- | --- |
+| 600 项列表定位 20 次的几何读取 | 8,900 次 | 20 次 |
+| 列表定位 JS 中位数 / P95 | 5.15 / 9.80ms | 0.50 / 0.70ms |
+| 12 批新增内容的全节点扫描 / 访问节点 | 12 次 / 18,024 | 0 / 0 |
+| 新视频发现及 Shadow DOM 重连 | 通过 | 通过 |
+| 原生冷启动中位数 / P95 | 601.5 / 639ms | 595 / 725ms |
+| 原生热启动中位数 / P95 | 0 / 0ms | 0 / 0ms |
+
+探针使用安装后的生产代码，在本地个人页替换有限测试 DOM，统计该工作量的查询和 `performance.now()` 时间，不替换应用脚本。原版基线为未经功能修改的 1.3.1 原签名重建包；与公开 1.3.1 的 78 个 ZIP 条目逐项对照，仅 `META-INF/version-control-info.textproto` 不同（`device-1.3.2-baseline-source-compare.json`）。这些计数和时间不代表整机帧率、耗电、总内存或官网网络加载速度。原生启动数据是 `am start -W TotalTime`，热启动 0ms 表示已有 Activity 被带到前台；中位数接近，P95 本轮较高，未取得启动加速证据。
+
+新增四项回归分别覆盖深层列表插入内容后的转义链接锚点恢复、嵌套 Shadow DOM 断开后重连、延迟注入后由缓存原生 `attachShadow` 创建的媒体，以及 100 次进度事件不查询字幕菜单、进度和字幕状态仍同步。弱引用路径只在文档开始阶段启用；旧引擎或延迟注入保留完整扫描，兼容网页此前缓存原生方法的情况。普通进度事件仅更新进度和时间，隐藏控件仍停止更新无障碍说明，重新显示时同步。
+
+图标使用用户提供的 1254×1254 RGBA 原图，保留在 `assets/app-icon-source.png`，SHA-256 `F6DF443EF2B7BD9780FAEB7F0A939077D3B6A554C8F49CA9F2AB30A4BE2893B8`。生成器清理外侧散点并生成五种密度、432px 自适应前景，单色电视轮廓用于 Android 主题图标。圆形预览按 Android 中央 72dp 遮罩绘制；原图不放入 APK 的网页 assets。
+
+保留的中间记录：前一候选 126/126（536.946s），随后完成单色图标与延迟注入兼容。新增测试最初存在 Java 等待 helper 参数错误、`0:02` 与原时间格式 `00:02` 的预期不符，记录为 `candidate-build.txt` 与 `overhead-regression.txt`，修正后最终包的新测试均通过。最终整组唯一失败为既有个人中心夹具加载后的首个 WebView 回调超时，补充原生 DOMContentLoaded 信号后保留全部边界与表单断言，专项通过，生产 APK 未改变。
+
+官网初次两轮首页检查被手机前台切换中断：第一轮完成 9 个状态后返回桌面；第二轮刷新时前台为另一个被测应用，后台触屏排版已暂停。设备事件日志确认另一应用的自动 instrumentation 测试正在使用同一手机。记录保存在 `device-1.3.2-live-all-attempt1/2.txt`、`home-live-attempt1/2.json`；未计入完整通过结果。官网工具已增加输入 / 截图前的本应用焦点检查及最后点按记录，等待其他测试释放设备后完整复验。
+
+课程前两轮的「上一集」检查超时，记录保留在 `player-course-attempt1/2-failure.json`。第二轮实际 pointerdown 命中 VIDEO，控件当时已隐藏，按钮动作未执行。工具补充可信原生触摸的目标核对，只对同文档中确认未命中的点按重新定位，已匹配的按钮动作保持一次执行；导航后的原分 P、选集、全屏与播放断言继续保留。随后手工诊断遇到另一应用再次占用前台，焦点检查阻止了该次输入（`touch-diagnostic.json`）。
+
+另一应用完成设备恢复后，课程 / 单视频 / 边界 / 全屏合集 / 新功能 / 深色页面的 36 个状态完整通过，结合已完整通过的首页及自动隐藏 20 个状态，共 56 个。新功能包括实际 480P、360P、自动及横屏 480P 切换，检查播放位置、2.5x 和全屏状态保留；返回列表保位、重复入口保留文档及原生 / 网页统一主题也通过。深色覆盖首页、搜索、热门、动态、历史、稍后再看。
+
+测试结束后，手机实际安装包 SHA-256 核对为上述 `298D2829…`（`device-1.3.2-tested-installed-sha256.txt`），生产文件指纹未改变。原生偏好及每次会话进入时的系统设置已恢复；最终系统读取为休眠 600000、自动旋转 0、user_rotation 0、字体 1.0。官网通过本任务 localhost HTTPS 隧道联网，TLS 在官方服务器终止，没有记录账号或请求正文；真实账号的提交、删除与购买未执行。
 
 ## 1.3.1：竖屏控制条自动隐藏与触摸动效（已发布并回装公开正式包）
 
