@@ -4,7 +4,7 @@
 
 [下载已发布 APK](https://github.com/GodBook/bilispeed-android/releases/latest) · [源码](https://github.com/GodBook/bilispeed-android)
 
-当前版本为 **[1.3.1 / versionCode 16](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.1)**。竖屏控制条和进度条约 3 秒无操作后自动隐藏，单击画面唤出或收起；拖动与打开设置面板时保持显示。细进度轨道、统一图标、按钮按压反馈和轻量面板动效让触摸操作更自然，保留完整点击区域并支持减少动态效果。修正长标题下授权说明与操作栏重叠。沿用统一主题、列表保位、五项底部导航、顶部搜索、列表下拉刷新和全屏连续切集。手机实测范围、失败记录及正式附件校验见 [VALIDATION.md](VALIDATION.md)。
+当前正式版本为 **[1.3.1 / versionCode 16](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.1)**，公开 APK 已覆盖安装连接手机并核对哈希。竖屏控制条和进度条约 3 秒无操作后自动隐藏，单击画面唤出或收起；拖动与打开设置面板时保持显示。细进度轨道、统一图标、按钮按压反馈和轻量面板动效让触摸操作更自然，保留完整点击区域并支持减少动态效果。修正长标题下授权说明与操作栏重叠。沿用统一主题、列表保位、五项底部导航、顶部搜索、列表下拉刷新和全屏连续切集。手机实测范围、失败记录及正式附件校验见 [VALIDATION.md](VALIDATION.md)。
 
 ## 安装与使用
 

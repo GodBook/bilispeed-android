@@ -1,6 +1,6 @@
 # Android 16 验收记录
 
-## 1.3.1：竖屏控制条自动隐藏与触摸动效
+## 1.3.1：竖屏控制条自动隐藏与触摸动效（已发布并回装公开正式包）
 
 验收日期：2026-10-14（北京时间）。连接设备为 USB `1944b301` / 小米 9 SE / Android 15 API 35 / WebView 153.0.8010.36 / 1080×2340 / density 440。本版使用这部连接手机验收，没有另行运行 Android 16 模拟器；APK 的 targetSdk 仍为 36。
 
@@ -28,6 +28,12 @@ UI 使用细轨道、统一 SVG 图标、轻量显隐 / 面板 / 字幕避让动
 官网检查通过已有 USB localhost HTTPS 隧道联网，TLS 在官方服务器终止，不记录账号或请求正文；手机没有默认网络。检查使用安装后的生产 APK 和真实 ADB 输入，不注入替换版应用脚本。测试保存 / 恢复原偏好，主应用不卸载、不清除 Cookies。复现入口见 [DEVICE-TESTING.md](DEVICE-TESTING.md)。
 
 最终测试 APK 已从手机拉取核对同一 SHA-256，保存在 `artifacts/tested-1.3.1`。27 个生产 / 构建文件在实站结束后核对未变。原偏好及系统设置已恢复（休眠 600000、自动旋转 1、user_rotation 0），检查会话、9222 转发、8877 reverse 和本任务 HTTPS 隧道均已结束。
+
+发布完成：[v1.3.1](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.1)，源码与标签提交为 `1d54da92657af17e2cdf466da5ee13e21604ea99`。从该提交重建的正式包为 **1835256 字节，SHA-256 `4818A63A740DB085FAF30DE0006BDA317A010C66F2905DB21B0885AB0812392A`**。78 个 ZIP 条目逐项比较，只有 `META-INF/version-control-info.textproto` 与手机实测候选不同；比较记录为 `device-1.3.1-release-compare.json`。
+
+GitHub 匿名 API 在检查时返回额度已耗尽，原 `verify-published-release.ps1` 未通过其元数据读取步骤。使用已登录 GitHub CLI 核对正式 / latest 标签、源码提交、三个资产摘要；三个 Release 附件及 `latest/download/update.json` 仍通过匿名公开 URL 下载，大小与 SHA-256 全部一致。公开更新 schema、minSdk、包名、版本、APK URL、校验文件内容和原签名均通过核对；记录为 `device-1.3.1-public-verification.json` 和 `device-1.3.1-github-release.json`。应用更新入口使用该直接公开 JSON URL。
+
+公开下载的正式 APK 已覆盖安装到同一手机，再拉取 `installed.apk` 核对上述正式包哈希，记录为 `device-1.3.1-installed-public.json`，下载及安装副本保存在 `artifacts/published-1.3.1`。已移除一次性测试 runner，正式包无 DEBUGGABLE，运行中的正式应用调试 socket 和本任务转发均为 0。手机停留在正式版设置页，原倍速 1x 已选中；截图 / XML 为 `device-1.3.1-published-settings.png/xml`。主应用及 Cookies 保留。
 
 ## 1.3.0：导航保位、触屏画质与统一主题（已发布并回装公开正式包）
 
