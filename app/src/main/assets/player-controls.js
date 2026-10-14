@@ -46,15 +46,21 @@ html[data-bilispeed-touch] #bilispeed-touch-controls {
     align-items: center; gap: 0 2px; position: absolute; bottom: 0; left: 0; right: 0; z-index: 100;
     box-sizing: border-box; padding: 12px 8px 4px;
     color: #fff; background: linear-gradient(transparent, rgba(0, 0, 0, .8));
-    font: 12px sans-serif; opacity: 1; visibility: visible; transition: opacity .18s;
+    font: 12px system-ui, sans-serif; opacity: 1; visibility: visible; transform: translateY(0);
+    transition: opacity .2s ease, transform .24s cubic-bezier(.22, 1, .36, 1), visibility 0s;
 }
 html[data-bilispeed-touch] #bilispeed-touch-controls[data-hidden="true"] {
-    opacity: 0; visibility: hidden; pointer-events: none;
+    opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(4px);
+    transition: opacity .2s ease, transform .24s cubic-bezier(.22, 1, .36, 1), visibility 0s .24s;
 }
 html[data-bilispeed-touch] #bilispeed-touch-controls button {
-    min-width: 44px; min-height: 44px; padding: 0 6px; border: 0; border-radius: 6px;
-    color: #fff; background: transparent; font: 13px sans-serif; white-space: nowrap; touch-action: manipulation;
+    min-width: 44px; min-height: 44px; padding: 0 6px; border: 0; border-radius: 8px;
+    color: #fff; background: transparent; font: 500 13px system-ui, sans-serif; white-space: nowrap; touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent; transition: background-color .16s ease, color .16s ease, transform .16s ease;
 }
+html[data-bilispeed-touch] #bilispeed-touch-controls button:enabled:active { background: rgba(255, 255, 255, .14); }
+html[data-bilispeed-touch] #bilispeed-touch-controls button:enabled:active :is(.control-icon, .episode-icon) { transform: scale(.9); }
+html[data-bilispeed-touch] #bilispeed-touch-controls button[aria-expanded="true"] { background: rgba(255, 255, 255, .12); }
 html[data-bilispeed-touch] #bilispeed-touch-controls button[aria-pressed="true"] { color: #ff91b2; }
 html[data-bilispeed-touch] #bilispeed-touch-controls button[hidden] { display: none !important; }
 html[data-bilispeed-touch] #bilispeed-touch-controls :focus-visible { outline: 2px solid #ff91b2; outline-offset: -2px; }
@@ -68,9 +74,23 @@ html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="su
 html[data-bilispeed-touch] #bilispeed-touch-controls input[type="range"] {
     min-width: 0; height: 28px; margin: 0; accent-color: #e8557f; touch-action: none;
 }
-html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="seek"] { grid-column: 1 / -1; width: 100%; }
+html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="seek"] {
+    grid-column: 1 / -1; width: 100%; height: 36px; padding: 0; border: 0; background: transparent;
+    appearance: none; -webkit-appearance: none; cursor: pointer;
+}
+html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="seek"]::-webkit-slider-runnable-track {
+    height: 3px; border-radius: 3px;
+    background: linear-gradient(to right, #ff91b2 var(--bilispeed-seek-progress, 0%), rgba(255, 255, 255, .38) var(--bilispeed-seek-progress, 0%));
+}
+html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="seek"]::-webkit-slider-thumb {
+    appearance: none; -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4.5px;
+    border: 2px solid #fff; border-radius: 50%; background: #f2789c;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, .24); transition: transform .16s ease;
+}
+html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="seek"]:active::-webkit-slider-thumb { transform: scale(1.3); }
 html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="play"] { font-size: 20px; }
-html[data-bilispeed-touch] #bilispeed-touch-controls .episode-icon { display: none; width: 22px; height: 22px; vertical-align: middle; }
+html[data-bilispeed-touch] #bilispeed-touch-controls .control-icon { display: inline-block; width: 22px; height: 22px; vertical-align: middle; fill: currentColor; transition: transform .16s ease; }
+html[data-bilispeed-touch] #bilispeed-touch-controls .episode-icon { display: none; width: 22px; height: 22px; vertical-align: middle; transition: transform .16s ease; }
 html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="more"] { font-size: 24px; }
 html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="time"] {
     min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
@@ -80,19 +100,23 @@ html[data-bilispeed-touch] #bilispeed-touch-controls:not([data-has-episodes]) { 
 html[data-bilispeed-touch] #bilispeed-player-panel {
     position: absolute; right: 8px; bottom: 4px; width: min(280px, calc(100% - 16px));
     max-height: min(260px, calc(var(--bilispeed-player-height, 100vh) - 16px)); overflow: auto; padding: 12px; box-sizing: border-box;
-    background: rgba(24, 25, 28, .96); border: 1px solid #505158; border-radius: 10px;
-    font: 14px sans-serif; overscroll-behavior: contain;
+    background: rgba(30, 31, 35, .98); border: 1px solid rgba(255, 255, 255, .14); border-radius: 14px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .24); font: 14px system-ui, sans-serif; overscroll-behavior: contain;
+    scrollbar-width: thin; animation: bilispeed-panel-in .22s cubic-bezier(.22, 1, .36, 1);
 }
 html[data-bilispeed-touch] #bilispeed-player-panel[hidden],
 html[data-bilispeed-touch] #bilispeed-player-panel > [hidden],
 html[data-bilispeed-touch] #bilispeed-seek-feedback[hidden] { display: none !important; }
 html[data-bilispeed-touch] #bilispeed-player-panel header { display: flex; align-items: center; justify-content: space-between; }
-html[data-bilispeed-touch] #bilispeed-player-panel header { position:sticky;top:-12px;background:#18191c;z-index:1; }
+html[data-bilispeed-touch] #bilispeed-player-panel header { position:sticky;top:-12px;background:#1e1f23;z-index:1;font-weight:600; }
+html[data-bilispeed-touch] #bilispeed-player-panel [data-bilispeed-control="close-panel"] { color: #ff91b2; }
 html[data-bilispeed-touch] #bilispeed-player-panel [data-bilispeed-control="volume-slider"] { width: 100%; height: 44px; }
 html[data-bilispeed-touch] #bilispeed-player-panel [data-subtitle-option] { display: block; width: 100%; text-align: left; }
 html[data-bilispeed-touch] #bilispeed-player-panel [data-quality-option] { display:block;width:100%;text-align:left;white-space:normal; }
-html[data-bilispeed-touch] #bilispeed-player-panel .speed-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
-html[data-bilispeed-touch] #bilispeed-player-panel .speed-presets button[aria-pressed="true"] { background: #51333e; }
+html[data-bilispeed-touch] #bilispeed-player-panel .speed-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+html[data-bilispeed-touch] #bilispeed-player-panel .speed-presets button { background: rgba(255, 255, 255, .06); font-variant-numeric: tabular-nums; }
+html[data-bilispeed-touch] #bilispeed-player-panel .speed-presets button[aria-pressed="true"] { background: #51333e; box-shadow: inset 0 0 0 1px rgba(255, 145, 178, .35); }
+html[data-bilispeed-touch] #bilispeed-player-panel [data-bilispeed-control^="more-"] { display: block; width: 100%; text-align: left; }
 html[data-bilispeed-touch] #bilispeed-player-panel .speed-custom { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 html[data-bilispeed-touch] #bilispeed-player-panel .speed-custom input { min-width: 0; width: 100%; min-height: 44px; box-sizing: border-box;
     border: 1px solid #777; border-radius: 6px; padding: 0 8px; font: inherit; color: #fff; background: #303136; }
@@ -102,8 +126,10 @@ html[data-bilispeed-touch] #bilispeed-player-panel p { line-height: 1.6; margin:
 html[data-bilispeed-touch] #bilispeed-seek-feedback {
     position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%); z-index: 101;
     max-width: calc(100% - 32px); padding: 10px 14px; border-radius: 8px; box-sizing: border-box;
-    color: #fff; background: rgba(0, 0, 0, .76); font: 14px sans-serif; text-align: center; pointer-events: none;
+    color: #fff; background: rgba(24, 25, 28, .9); font: 500 14px/1.5 system-ui, sans-serif; text-align: center; pointer-events: none;
+    font-variant-numeric: tabular-nums; animation: bilispeed-feedback-in .18s ease-out;
 }
+html[data-bilispeed-touch] [data-bilispeed-player] .bpx-player-subtitle-wrap { transition: transform .22s cubic-bezier(.22, 1, .36, 1); }
 html[data-bilispeed-touch] [data-bilispeed-player][data-controls-visible] .bpx-player-subtitle-wrap {
     transform: translateY(calc(-1 * var(--bilispeed-controls-height, 72px)));
 }
@@ -144,8 +170,23 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
     html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="time"] { font-size: 11px; }
     html[data-bilispeed-touch] #bilispeed-touch-controls .time-duration { display: none; }
 }
+@keyframes bilispeed-panel-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@keyframes bilispeed-feedback-in {
+    from { opacity: 0; transform: translate(-50%, calc(-50% + 4px)); }
+    to { opacity: 1; transform: translate(-50%, -50%); }
+}
 @media (prefers-reduced-motion: reduce) {
-    html[data-bilispeed-touch] #bilispeed-touch-controls { transition: none; }
+    html[data-bilispeed-touch] #bilispeed-touch-controls,
+    html[data-bilispeed-touch] #bilispeed-touch-controls[data-hidden="true"],
+    html[data-bilispeed-touch] #bilispeed-touch-controls button,
+    html[data-bilispeed-touch] #bilispeed-touch-controls :is(.control-icon, .episode-icon),
+    html[data-bilispeed-touch] #bilispeed-touch-controls [data-bilispeed-control="seek"]::-webkit-slider-thumb,
+    html[data-bilispeed-touch] [data-bilispeed-player] .bpx-player-subtitle-wrap { transition: none; }
+    html[data-bilispeed-touch] #bilispeed-player-panel,
+    html[data-bilispeed-touch] #bilispeed-seek-feedback { animation: none; }
 }
 `;
 
@@ -184,8 +225,8 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
 
     function setVisible(visible) {
         if (!controls) return;
-        controls.dataset.hidden = String(!visible);
-        controls.setAttribute('aria-hidden', String(!visible));
+        setAttribute(controls, 'data-hidden', String(!visible));
+        setAttribute(controls, 'aria-hidden', String(!visible));
         controls.inert = !visible;
         if (host) host.toggleAttribute('data-controls-visible', visible);
     }
@@ -193,7 +234,7 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
     function scheduleHide() {
         clearTimeout(hideTimer);
         hideTimer = null;
-        if (suspended || !fullscreen || !controls || controls.dataset.hidden === 'true') return;
+        if (suspended || !controls || controls.dataset.hidden === 'true') return;
         hideTimer = setTimeout(() => {
             hideTimer = null;
             // Never remove a slider or a settings panel while it is being used.
@@ -282,7 +323,7 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
     function singleTap() {
         if (!controls || suspended) return;
         if (panel) { closePanel(); showControls(); }
-        else if (!fullscreen || controls.dataset.hidden === 'true') showControls();
+        else if (controls.dataset.hidden === 'true') showControls();
         else setVisible(false);
     }
 
@@ -315,6 +356,14 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
         element.textContent = label;
         element.addEventListener('click', event => { event.preventDefault(); cancelTap(); action(); });
         return element;
+    }
+
+    function controlIcon(element, pathData) {
+        const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        icon.classList.add('control-icon'); icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('aria-hidden', 'true');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', pathData); icon.append(path); element.replaceChildren(icon);
+        return path;
     }
 
     function subtitleState() {
@@ -531,6 +580,7 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
         });
         range.addEventListener('pointercancel', () => { cancelPreview(); update(); });
         const play = button('play', '▶', () => togglePlayback(false));
+        const playIcon = controlIcon(play, 'M8 5v14l11-7Z');
         const previous = button('previous', '上一集', () => changeEpisode('previous'));
         const next = button('next', '下一集', () => changeEpisode('next'));
         [previous, next].forEach((item, index) => {
@@ -551,6 +601,7 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
         const subtitles = button('subtitles', '字幕', () => togglePanel('subtitles'));
         const speed = button('speed', '倍速', () => togglePanel('speed'));
         const more = button('more', '⋯', () => togglePanel('more')); more.hidden = true;
+        controlIcon(more, 'M7 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0M14 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0M21 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0');
         more.setAttribute('aria-label', '更多播放设置：画质、音量与字幕');
         const full = button('fullscreen', '全屏', () => {
             if (nativeFullscreen && window.BiliSpeedBridge) window.BiliSpeedBridge.postMessage(JSON.stringify({ type: 'exit-fullscreen' }));
@@ -631,7 +682,8 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
         controls.append(range, previous, play, next, time, speed, volume, subtitles, more, full, settings);
         feedback = document.createElement('div');
         feedback.id = 'bilispeed-seek-feedback'; feedback.hidden = true;
-        parts = { range, play, previous, next, time, timeCurrent, timeDuration, speed, volume, subtitles, more, morePanel, full, panel: settings, panelTitle: title,
+        feedback.setAttribute('role', 'status');
+        parts = { range, play, playIcon, previous, next, time, timeCurrent, timeDuration, speed, volume, subtitles, more, morePanel, full, panel: settings, panelTitle: title,
             volumePanel, volumeSlider, volumeValue, mute, subtitlePanel, subtitleOptions: subtitlePanel,
             speedPanel, presets, customRate, speedError, qualityPanel, qualityCurrent, qualityOptions, qualityStatus };
     }
@@ -749,8 +801,9 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
             document.documentElement.toggleAttribute('data-bilispeed-fullscreen', full);
             setVisible(!full);
             updateLayout();
+            scheduleHide();
         }
-        // Fullscreen controls are usually hidden. Catch up when shown instead
+        // Hidden controls catch up when shown instead
         // of changing their range, labels and subtitle queries on timeupdate.
         if (controls.dataset.hidden === 'true' && !panel && preview === null && !gesture) return;
         const navigation = window.__BiliTouchVideo && window.__BiliTouchVideo.getNavigation();
@@ -776,13 +829,15 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
             setAttribute(option, 'aria-pressed', String(Math.abs(Number(option.dataset.rate) - rate) < .001));
         });
         const playing = !video.paused && !video.ended;
-        setText(parts.play, playing ? 'Ⅱ' : '▶');
+        setAttribute(parts.playIcon, 'd', playing ? 'M6 5h4v14H6ZM14 5h4v14h-4Z' : 'M8 5v14l11-7Z');
         setAttribute(parts.play, 'aria-label', playing ? '暂停视频' : '播放视频');
         const canSeek = seekable(video);
         if (parts.range.disabled === canSeek) parts.range.disabled = !canSeek;
         const position = preview !== null ? preview : video.currentTime;
         const progress = String(canSeek ? Math.round(position / video.duration * 1000) : 0);
         if (parts.range.value !== progress) parts.range.value = progress;
+        const fill = Number(progress) / 10 + '%';
+        if (parts.range.style.getPropertyValue('--bilispeed-seek-progress') !== fill) parts.range.style.setProperty('--bilispeed-seek-progress', fill);
         setAttribute(parts.range, 'aria-valuetext', timeLabel(position) + ' / ' + timeLabel(video.duration));
         setText(parts.timeCurrent, video.duration === Infinity ? '直播' : timeLabel(position));
         setText(parts.timeDuration, video.duration === Infinity ? '' : ' / ' + timeLabel(video.duration));
@@ -853,7 +908,12 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
         update(); updateLayout();
     }
 
-    function finishInteraction() { interacting = false; scheduleHide(); }
+    function finishInteraction() {
+        interacting = false;
+        // A press on the current thumb may produce no input/change event.
+        if (progressVideo && preview === null) progressVideo = null;
+        scheduleHide();
+    }
     function resized() { cancelPreview(); interacting = false; refresh(); scheduleHide(); }
     function setSuspended(value) {
         const next = !!value;

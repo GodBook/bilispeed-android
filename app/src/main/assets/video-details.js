@@ -26,20 +26,27 @@ html[data-bilispeed-touch] #bilispeed-episodes[hidden] { display: none; }
 #bilispeed-episodes .episode-list { position: relative; }
 #bilispeed-episodes .episode-list[data-expanded] { max-height: min(480px, 60vh); overflow-y: auto; overscroll-behavior: contain; }
 #bilispeed-episodes a { display: flex; align-items: center; gap: 10px; min-height: 48px; color: inherit;
-    text-decoration: none; touch-action: manipulation; border-radius: 5px; padding: 8px; box-sizing: border-box; }
+    text-decoration: none; touch-action: manipulation; border-radius: 8px; padding: 8px; box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent; transition: background-color .18s ease, transform .18s ease; }
 #bilispeed-episodes a[hidden] { display: none; }
 #bilispeed-episodes a[aria-current] { color: #00a1d6; background: #eaf6fb; }
-#bilispeed-episodes a:active { background: #eaf6fb; }
+#bilispeed-episodes a:active { background: #eaf6fb; transform: scale(.99); }
 #bilispeed-episodes a:focus-visible, #bilispeed-episodes button:focus-visible { outline: 2px solid #00a1d6; outline-offset: -2px; }
 #bilispeed-episodes .episode-index { flex: none; min-width: 20px; color: #9499a0; font-size: 12px; font-variant-numeric: tabular-nums; }
 #bilispeed-episodes .episode-title { flex: 1; min-width: 0; display: -webkit-box; -webkit-box-orient: vertical;
     -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
 #bilispeed-episodes time { color: #9499a0; font-size: 12px; font-variant-numeric: tabular-nums; flex: none; }
-#bilispeed-episodes button { border: 0; color: #00a1d6; background: transparent; min-height: 44px; padding: 0 10px; font: inherit; }
+#bilispeed-episodes button { border: 0; color: #00a1d6; background: transparent; min-height: 44px; padding: 0 10px; font: inherit;
+    border-radius: 8px; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    transition: background-color .18s ease, transform .18s ease; }
+#bilispeed-episodes button:enabled:active { background: #eaf6fb; }
 #bilispeed-episodes .episode-actions { display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid #e3e5e7; margin-top: 8px; }
 #bilispeed-episodes p { margin: 0; color: #9499a0; }
 html[data-bilispeed-touch][data-bilispeed-episodes-ready] #mirror-vdcon :is(.video-pod-above-modules, #multi_page, .video-sections) { display: none !important; }
 html[data-bilispeed-touch] #mirror-vdcon :is(.up-panel-container, .video-pod, .video-sections, .video-desc-container) { max-width: 100%; box-sizing: border-box; }
+@media (prefers-reduced-motion: reduce) {
+    #bilispeed-episodes a, #bilispeed-episodes button { transition: none; }
+}
 `;
 
     function route() {

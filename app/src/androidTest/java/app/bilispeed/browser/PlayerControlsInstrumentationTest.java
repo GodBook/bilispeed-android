@@ -71,7 +71,7 @@ public class PlayerControlsInstrumentationTest {
         }
         activity = (MainActivity) instrumentation.startActivitySync(new Intent(context, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
-        instrumentation.runOnMainSync(() -> activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));
+        DeviceTestLayout.portrait(instrumentation, activity);
         String width = InstrumentationRegistry.getArguments().getString("layoutWidth");
         if (width != null) instrumentation.runOnMainSync(() -> {
             View container = (View) activity.browserForTesting().getParent();
@@ -94,12 +94,17 @@ public class PlayerControlsInstrumentationTest {
                 + "<video id='v' playsinline muted preload='auto' src='" + media + "'></video>"
                 + "<div class='bpx-player-control-wrap'>官方控制栏</div></div></div></div></div>"
                 + "<div class='video-toolbar-container'>官方点赞、收藏</div><p>测试视频简介</p></div>"
-                + "<div class='right-container'><p style='height:900px'>推荐与评论</p></div></div></div>";
+                + "<div class='right-container'><p style='height:900px'>推荐与评论</p></div></div></div>"
+                + "<script>document.addEventListener('DOMContentLoaded',()=>window.PlayerFixtureLoaded?.ready(),{once:true});</script>";
         fixtureHtml = html;
+        CountDownLatch fixtureLoaded = new CountDownLatch(1);
+        Object loadedSignal = new Object() { @android.webkit.JavascriptInterface public void ready() { fixtureLoaded.countDown(); } };
         instrumentation.runOnMainSync(() -> {
             activity.browserForTesting().stopLoading();
+            activity.browserForTesting().addJavascriptInterface(loadedSignal, "PlayerFixtureLoaded");
             activity.browserForTesting().loadDataWithBaseURL("https://www.bilibili.com/video/__bilispeed_controls__/", html, "text/html", "UTF-8", null);
         });
+        assertTrue("The fixture document did not finish loading", fixtureLoaded.await(12, TimeUnit.SECONDS));
         await("window.playerFixture && window.__BiliTouchPlayer && document.getElementById('v').readyState>=2 && " + CONTROLS);
         await("innerHeight>innerWidth");
         if (width != null) assertEquals(Integer.parseInt(width), ((Number) js("innerWidth")).doubleValue(), 1);
@@ -186,6 +191,12 @@ public class PlayerControlsInstrumentationTest {
     }
 
     private void tap(String selector) throws Exception {
+        if (Boolean.TRUE.equals(js("!!document.querySelector('" + selector + "')?.closest('#bilispeed-touch-controls') && "
+                + CONTROLS + ".dataset.hidden==='true'"))) {
+            tap(HOST);
+            await(CONTROLS + ".dataset.hidden==='false'");
+            SystemClock.sleep(260);
+        }
         if (selector.equals("[data-bilispeed-control=volume]") || selector.equals("[data-bilispeed-control=subtitles]")) {
             if (Boolean.TRUE.equals(js("document.querySelector('" + selector + "').hidden"))) {
                 tap("[data-bilispeed-control=more]");
@@ -319,9 +330,9 @@ public class PlayerControlsInstrumentationTest {
         tap(HOST); await(CONTROLS + ".dataset.hidden==='false'");
         click("volume");
         assertEquals("0.3", js("getComputedStyle(document.querySelector('[data-bilispeed-control=subtitles]')).opacity"));
-        assertTrue((Boolean) js("(function(){var p=document.getElementById('bilispeed-player-panel').getBoundingClientRect(),"
+        await("(function(){var p=document.getElementById('bilispeed-player-panel').getBoundingClientRect(),"
                 + "c=document.querySelector('.bpx-player-subtitle-wrap').getBoundingClientRect(),bar=" + CONTROLS + ".getBoundingClientRect();"
-                + "return p.top>=0&&p.bottom<=innerHeight&&c.top>=0&&c.bottom<=bar.top&&p.right<=innerWidth;})()"));
+                + "return p.top>=0&&p.bottom<=innerHeight&&c.top>=0&&c.bottom<=bar.top&&p.right<=innerWidth;})()");
         screenshot("BiliSpeed-large-subtitle-fullscreen");
     }
 
@@ -635,12 +646,72 @@ public class PlayerControlsInstrumentationTest {
         await("document.querySelector('[data-bilispeed-control=subtitles]').getAttribute('aria-pressed')==='true'");
     }
 
+    @Test public void portraitAutoHidesAndSingleTapTogglesControlsWithoutPausing() throws Exception {
+        js("v.loop=true;true");
+        tap("[data-bilispeed-control=play]");
+        await("!v.paused && " + CONTROLS + ".dataset.hidden==='false'");
+        await(CONTROLS + ".dataset.hidden==='true' && getComputedStyle(" + CONTROLS + ").visibility==='hidden'");
+        assertEquals("true", js(CONTROLS + ".getAttribute('aria-hidden')"));
+        assertTrue((Boolean) js(CONTROLS + ".inert"));
+        assertFalse((Boolean) js("v.paused"));
+        screenshot("BiliSpeed-1.3.1-portrait-hidden");
+        tap(HOST);
+        await(CONTROLS + ".dataset.hidden==='false'");
+        assertEquals("false", js(CONTROLS + ".getAttribute('aria-hidden')"));
+        assertFalse((Boolean) js(CONTROLS + ".inert || v.paused"));
+        screenshot("BiliSpeed-1.3.1-portrait-controls");
+        tap(HOST);
+        await(CONTROLS + ".dataset.hidden==='true'");
+        assertFalse((Boolean) js("v.paused"));
+        await("v.currentTime>0.1");
+    }
+
+    @Test public void portraitPanelAndHeldSeekStayVisibleThenResumeAutoHide() throws Exception {
+        tap("[data-bilispeed-control=speed]");
+        SystemClock.sleep(3400);
+        assertEquals("false", js(CONTROLS + ".dataset.hidden"));
+        assertFalse((Boolean) js("document.getElementById('bilispeed-player-panel').hidden"));
+        assertContained();
+        tap("[data-bilispeed-control=close-panel]");
+        float[] rangeStart = point("[data-bilispeed-control=seek]", .3, .5);
+        float[] rangeEnd = point("[data-bilispeed-control=seek]", .7, .5);
+        input(MotionEvent.ACTION_DOWN, rangeStart);
+        input(MotionEvent.ACTION_MOVE, rangeEnd);
+        SystemClock.sleep(3400);
+        assertEquals("false", js(CONTROLS + ".dataset.hidden"));
+        input(MotionEvent.ACTION_UP, rangeEnd);
+        await("!v.seeking && v.currentTime>v.duration*.5");
+        assertTrue((Boolean) js("v.paused"));
+        await(CONTROLS + ".dataset.hidden==='true'");
+        swipe(.65, .25, .25, .25);
+        await("!v.seeking && v.currentTime<v.duration*.5");
+        assertEquals("true", js(CONTROLS + ".dataset.hidden"));
+        assertTrue((Boolean) js("v.paused"));
+    }
+
+    @Test public void unchangedSeekPressDoesNotPreventPortraitAutoHide() throws Exception {
+        tap("[data-bilispeed-control=speed]");
+        tap("[data-bilispeed-control=close-panel]");
+        // Exercise a contact on the current thumb, which need not emit change.
+        js("v.currentTime=0;window.seekChanges=0;document.querySelector('[data-bilispeed-control=seek]')"
+                + ".addEventListener('change',()=>seekChanges++);true");
+        await("!v.seeking && v.currentTime<.05");
+        float[] thumb = point("[data-bilispeed-control=seek]", .01, .5);
+        input(MotionEvent.ACTION_DOWN, thumb);
+        SystemClock.sleep(3400);
+        assertEquals("false", js(CONTROLS + ".dataset.hidden"));
+        input(MotionEvent.ACTION_UP, thumb);
+        assertEquals("The unchanged press must not rely on a change event", 0, ((Number) js("seekChanges")).intValue());
+        await(CONTROLS + ".dataset.hidden==='true'");
+        assertTrue((Boolean) js("v.paused"));
+    }
+
     @Test public void fullscreenStartsHiddenTapRevealsAndOpenPanelKeepsControls() throws Exception {
         tap("[data-bilispeed-control=fullscreen]");
         await("document.fullscreenElement && innerWidth>innerHeight && " + CONTROLS + ".dataset.hidden==='true'");
         dismissImmersiveHint(instrumentation);
         instrumentation.runOnMainSync(() -> assertTrue(activity.fullscreenForTesting()));
-        assertEquals("hidden", js("getComputedStyle(" + CONTROLS + ").visibility"));
+        await("getComputedStyle(" + CONTROLS + ").visibility==='hidden'");
         screenshot("BiliSpeed-player-fullscreen-hidden");
         js("window.fullTouchTrace=[];['click','touchstart','touchmove','touchend','touchcancel','pointerdown','pointermove','pointercancel','mousedown','mousemove','mouseup','resize'].forEach(function(name){window.addEventListener(name,function(e){"
                 + "fullTouchTrace.push({type:e.type,pointer:e.pointerType,target:e.target.id||e.target.className,cancelable:e.cancelable,touches:e.touches&&Array.from(e.touches).map(function(t){return {x:t.clientX,y:t.clientY};})});},true);});true");
@@ -886,9 +957,9 @@ public class PlayerControlsInstrumentationTest {
         assertEquals(true,js("v===originalVideo && Math.abs(v.currentTime-1)<.2 && Math.abs(v.playbackRate-3.5)<.01"));
     }
     private void assertContained() throws Exception {
-        assertTrue((Boolean) js("(function(){var h=document.querySelector('" + HOST + "').getBoundingClientRect();"
+        await("(function(){var h=document.querySelector('" + HOST + "').getBoundingClientRect();"
                 + "return document.documentElement.scrollWidth<=innerWidth+2 && getComputedStyle(v).objectFit==='contain' && "
                 + "Array.from(document.querySelectorAll('#bilispeed-touch-controls>button:not([hidden])')).every(function(b){var r=b.getBoundingClientRect();"
-                + "return r.width>=44 && r.height>=44 && r.left>=h.left-1 && r.right<=h.right+1 && r.bottom<=h.bottom+1;});})()"));
+                + "return r.width>=44 && r.height>=44 && r.left>=h.left-1 && r.right<=h.right+1 && r.bottom<=h.bottom+1;});})()");
     }
 }

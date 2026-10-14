@@ -4,15 +4,15 @@
 
 [下载已发布 APK](https://github.com/GodBook/bilispeed-android/releases/latest) · [源码](https://github.com/GodBook/bilispeed-android)
 
-当前正式版本为 **[1.3.0 / versionCode 15](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.0)**，公开APK已覆盖安装连接手机并核对哈希。统一浅色、深色与跟随系统主题，保留列表浏览位置，增加触屏画质入口，修正首页卡片的分段空白。沿用五项底部导航、顶部搜索、列表下拉刷新和全屏连续切集。实机与Android16模拟器各完整120项通过，连续20轮、官网40状态和6个深色页面通过；验证范围、内存测量限制及正式附件记录见 [VALIDATION.md](VALIDATION.md)，执行检查点见 [EXECUTION-1.3.0.md](EXECUTION-1.3.0.md)。
+当前版本为 **[1.3.1 / versionCode 16](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.1)**。竖屏控制条和进度条约 3 秒无操作后自动隐藏，单击画面唤出或收起；拖动与打开设置面板时保持显示。细进度轨道、统一图标、按钮按压反馈和轻量面板动效让触摸操作更自然，保留完整点击区域并支持减少动态效果。修正长标题下授权说明与操作栏重叠。沿用统一主题、列表保位、五项底部导航、顶部搜索、列表下拉刷新和全屏连续切集。手机实测范围、失败记录及正式附件校验见 [VALIDATION.md](VALIDATION.md)。
 
 ## 安装与使用
 
 从[最新 Releases](https://github.com/GodBook/bilispeed-android/releases/latest)下载APK，传到手机后覆盖安装；如系统询问，允许当前文件管理器安装此APK。无需root，也不会替换官方B站App。已有1.1.x或1.2.x可在应用内检查更新；已有1.0.0时先手动覆盖安装，即可获得在线更新入口。
 
-1.3.0 使用原签名，可以覆盖安装旧版，保留设置与已有 Cookies。本机安装包位于 `artifacts/BiliSpeed-1.3.0-Android16.apk`。
+1.3.1 使用原签名，可以覆盖安装旧版，保留设置与已有 Cookies。本机安装包位于 `artifacts/BiliSpeed-1.3.1-Android16.apk`。
 
-本版的实机、Android 16 模拟器、回归和正式包验证结果见 VALIDATION.md；复现命令见 DEVICE-TESTING.md。
+本版的连接手机、回归和正式包验证结果见 VALIDATION.md；复现命令见 DEVICE-TESTING.md。Android 16 模拟器结果保留在历史版本记录中。
 
 - 点底部「我的」右侧的「设置」，直接选择 1x、1.25x、1.5x、2x、2.5x、3x、3.5x、4x、5x。
 - 滑杆支持 0.25–5x，步长 0.05；输入框支持两位小数，例如 2.75x。
@@ -32,7 +32,7 @@
 - 在视频画面上单指左右滑动可预览进度，松手后跳转；一次横跨画面的滑动最多调节 120 秒。上下滑动仍可滚动页面，双指操作或手势取消不会跳转；直播不提供进度跳转。
 - 单指快速双击视频画面可暂停 / 继续播放，竖屏和全屏均适用。单击用于显示或收起控件；滑动、双指、长按和取消手势不会识别成双击。
 - 「音量」面板支持 0–100% 调节和静音 / 恢复；「字幕」面板支持选择视频已有字幕语言或关闭字幕，兼容 HTML5 字幕轨道和官方播放器的主字幕菜单。无字幕或需登录时会显示说明，字幕权限由官方网页决定。
-- 全屏时播放栏默认隐藏，轻点画面显示，再次点击可收起；约 3 秒无操作自动隐藏，拖动滑杆或打开设置面板时保持显示。隐藏时也可以左右滑动调节进度。
+- 竖屏播放栏与进度条约 3 秒无操作自动隐藏，轻点画面显示，再次点击可收起；全屏默认隐藏并使用相同手势。拖动滑杆、按住当前进度点、使用键盘或打开设置面板时保持显示，操作结束后重新计时。隐藏时也可以左右滑动调节进度。控件、字幕避让和面板使用轻量动效，系统减少动态效果时关闭动画。
 - 播放器根据视频比例和可用屏幕高度调整尺寸，横竖屏切换时重新计算，画面按比例完整显示；触屏布局按手机宽度显示，电脑原版布局保留双指缩放。
 - 「设置」可刷新页面、打开链接 / BV 号、复制链接、使用系统浏览器，或切换「手机触屏布局 / 电脑原版布局」。两种布局均使用电脑端，原版布局支持双指缩放并保留底部导航。首页使用底部入口，后退使用系统返回键。
 - 官方 App 的分享链接也可以分享给本浏览器。
@@ -128,17 +128,17 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-apk.ps1
 
 ## 发布后续更新
 
-1. 在 version.properties 递增 versionCode 并更新 versionName，例如 15 / 1.3.0。
+1. 在 version.properties 递增 versionCode 并更新 versionName，例如 16 / 1.3.1。
 2. 修改 release-notes.md，使用原来的 .signing 密钥构建并验证 APK。
 3. 提交已验证的源码，再从该提交重新构建正式 APK，确保包内的源码版本记录与发布标签一致。推送源码和标签后，发布三个 Release 附件：
 
 ~~~powershell
 .\scripts\build-apk.ps1 -RunTests -DeviceSerial emulator-5580
 git add .
-git commit -m "Release 1.3.0"
+git commit -m "Release 1.3.1"
 .\scripts\build-apk.ps1
-git tag v1.3.0
-git push origin main v1.3.0
+git tag v1.3.1
+git push origin main v1.3.1
 .\scripts\publish-release.ps1
 ~~~
 

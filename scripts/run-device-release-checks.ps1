@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory)][string]$DeviceSerial,
     [switch]$ThemeOnly,
     [switch]$InspectOnly,
-    [ValidateSet('home','course','single','boundaries','collection-fullscreen','new')][string]$FromStage='home',
+    [ValidateSet('home','autohide','course','single','boundaries','collection-fullscreen','new')][string]$FromStage='home',
+    [ValidatePattern('^(?:127\.0\.0\.1|localhost):\d{1,5}$')][string]$InspectionProxy='',
     [string]$AndroidSdk = 'D:\dev\android-sdk'
 )
 $ErrorActionPreference='Stop'
@@ -28,10 +29,12 @@ try {
     $sessionStarted=$true
     Start-DeviceSession
     $env:BILISPEED_EVIDENCE_PREFIX="$versionName-"
-    $inspectionProcess=Start-Process -FilePath $adb -WindowStyle Hidden -PassThru -ArgumentList @(
+    $inspectionArguments=@(
         '-s',$DeviceSerial,'shell','am','instrument','-w','-r','-e','class',
-        'app.bilispeed.browser.DeviceUiInspectionTest#inspectConnectedDevice','-e','inspectionSeconds','3600',
-        'app.bilispeed.browser.test/androidx.test.runner.AndroidJUnitRunner') -RedirectStandardOutput (Join-Path $outputFolder "device-$versionName-release-inspection.txt") -RedirectStandardError (Join-Path $outputFolder "device-$versionName-release-inspection-error.txt")
+        'app.bilispeed.browser.DeviceUiInspectionTest#inspectConnectedDevice','-e','inspectionSeconds','3600')
+    if($InspectionProxy){$inspectionArguments+=@('-e','inspectionProxy',$InspectionProxy)}
+    $inspectionArguments+='app.bilispeed.browser.test/androidx.test.runner.AndroidJUnitRunner'
+    $inspectionProcess=Start-Process -FilePath $adb -WindowStyle Hidden -PassThru -ArgumentList $inspectionArguments -RedirectStandardOutput (Join-Path $outputFolder "device-$versionName-release-inspection.txt") -RedirectStandardError (Join-Path $outputFolder "device-$versionName-release-inspection-error.txt")
     $deadline=(Get-Date).AddSeconds(30)
     $connected=$false
     while((Get-Date) -lt $deadline){
@@ -52,7 +55,7 @@ try {
     }
     if(-not $ThemeOnly){
         $checks=@(@{stage='home';name='home-live';arguments=@('scripts/device-home-smoke.mjs',$DeviceSerial)})
-        foreach($stage in @('course','single','boundaries','collection-fullscreen')){
+        foreach($stage in @('autohide','course','single','boundaries','collection-fullscreen')){
             $checks+=@{stage=$stage;name="player-$stage";arguments=@('scripts/device-player-smoke.mjs',$DeviceSerial,$stage)}
         }
         $checks+=@{stage='new';name='new-live';arguments=@('scripts/device-1.3-smoke.mjs',$DeviceSerial)}

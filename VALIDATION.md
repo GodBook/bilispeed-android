@@ -1,5 +1,34 @@
 # Android 16 验收记录
 
+## 1.3.1：竖屏控制条自动隐藏与触摸动效
+
+验收日期：2026-10-14（北京时间）。连接设备为 USB `1944b301` / 小米 9 SE / Android 15 API 35 / WebView 153.0.8010.36 / 1080×2340 / density 440。本版使用这部连接手机验收，没有另行运行 Android 16 模拟器；APK 的 targetSdk 仍为 36。
+
+最终生产代码的测试 APK 为 **1.3.1 / code16，1835256 字节，SHA-256 `28E4FB75B800124F7484DB109137FFEB35395362180DF3230FA813931B44073B`**。27 个生产 / 构建文件指纹记录在 `artifacts/device-1.3.1-final-source-sha256.json`。
+
+| 检查 | 结果 | 主要证据（artifacts 下） |
+| --- | --- | --- |
+| 连接手机核心集合 | 最终 APK 的 123 项去重均有通过结果：整组 122/123（534.209s），个人中心夹具一次 WebView 回调超时；该项原测试独立 1/1 通过（2.561s），生产 APK 哈希未变化 | device-1.3.1-final123.txt、device-1.3.1-final-account.txt |
+| 实际 320px 窄屏 | 4/4 通过（33.959s），含三项新增触摸检查及单行选集 / 更多入口 | device-1.3.1-final-320.txt |
+| 官网触摸场景 | 33/33 分阶段通过：浅色自动隐藏 10、课程 / 全屏切集 11、单视频 2、深色自动隐藏 10；均检查信息区与操作栏分离 | device-1.3.1-live-autohide/course/single/dark-autohide.txt 及对应 player JSON / native.png |
+| 全屏深色画质面板 | 真实 ADB 点击打开，6 个官网画质选项；面板完全位于 821×392 CSS 视口内，关闭及系统返回正常 | device-1.3.1-fullscreen-quality-panel.json / native.png |
+| 构建与静态检查 | release 构建、全部应用 JS、检查脚本语法及 git diff --check 通过；lint 0 errors / 3 既有 warnings | lint-results-release.txt |
+| 原签名 | 原 SHA-256 证书 `e2d8ed51e71288c8f2a0ea81e3f7ac23aba499d59ed6d7eace205e78960f94b3`，覆盖安装保留应用数据 | apksigner verify --print-certs |
+
+竖屏控制条与进度条在约 3 秒无操作后隐藏，单击显隐不改变播放状态，双击继续暂停 / 播放。拖动、按住当前进度点、打开面板及键盘操作保护沿用同一计时逻辑；修正没有 input/change 事件的进度按压结束后未清理交互状态的问题。隐藏同时设置 aria-hidden/inert 并停止不可见进度更新。
+
+UI 使用细轨道、统一 SVG 图标、轻量显隐 / 面板 / 字幕避让动效和触摸反馈。缩放作用于图标，按钮保留至少 44px 点击区域；选集当前项及按压反馈使用浅 / 深色主题对应颜色。信息区改为按内容自动撑高，避免长标题下播放数据、授权说明与点赞栏重叠。减少动态效果的 CSS 路径通过真实页面的 CDP 媒体偏好模拟检查，不将其表述为系统设置或 TalkBack 的完整验收。
+
+测试流程先唤醒屏幕，播放器夹具等待原生竖屏尺寸与 DOMContentLoaded 的原生信号，字幕避让和退出全屏后的边界断言等待动画 / 布局后的原几何条件，保留至少 44px 的点击区域与原边界要求。前期 `device-1.3.1-player-regression.txt`（休眠时启动）、`player-awake.txt` / `isolated-*`（页面加载回调竞争）、`player-ready.txt`（28/29，字幕动画尚未结束时立即检查）和前一候选的 `full-regression.txt`（122/123，布局瞬态；专项 `layout-settled.txt` 1/1）均保留，不计入最终构建的通过结果。实站 `live-autohide-attempt1.txt` 记录动画中 43.999988px 的浮点边界误判，随后改为等待控制条过渡完成再测量，尺寸断言保持 44px。早期 `device-1.2.9-player-autohide.json` 是未设置证据前缀的中间构建检查，最终证据使用 1.3.1 前缀。
+
+实站初次加载时隐藏状态曾在两次读取间改变（`player-autohide-attempt2-failure.json`），检查改为同时确认隐藏、inert、aria-hidden 和淡出完成的状态持续 600ms，随后浅 / 深色各 10 项通过。目视核对最终浅色 / 深色隐藏画面、唤出控制条、倍速面板及横屏画质面板；三行长标题的信息区实测 140.5px，授权说明在容器内，点赞栏位于其下方。
+
+额外沿用 1.3.0 官网导航 / 画质专项的两轮结果单独保留，不计入上述 33 个通过场景：`live-navigation-quality-attempt1.txt` 为 8/9（480P / 360P / 自动通过，全屏旋转中点按准备未命中）；完善点按前的几何等待与命中复核后，第二轮为 5/9，官网 480P 请求未完成。应用在 45 秒后显示可重试说明并保留当前画质与播放，记录在 `new-live-attempt2.json`。全屏画质面板的实际显示已另行通过；最终版本没有取得该 9 项专项一次完整通过的结果。
+
+官网检查通过已有 USB localhost HTTPS 隧道联网，TLS 在官方服务器终止，不记录账号或请求正文；手机没有默认网络。检查使用安装后的生产 APK 和真实 ADB 输入，不注入替换版应用脚本。测试保存 / 恢复原偏好，主应用不卸载、不清除 Cookies。复现入口见 [DEVICE-TESTING.md](DEVICE-TESTING.md)。
+
+最终测试 APK 已从手机拉取核对同一 SHA-256，保存在 `artifacts/tested-1.3.1`。27 个生产 / 构建文件在实站结束后核对未变。原偏好及系统设置已恢复（休眠 600000、自动旋转 1、user_rotation 0），检查会话、9222 转发、8877 reverse 和本任务 HTTPS 隧道均已结束。
+
 ## 1.3.0：导航保位、触屏画质与统一主题（已发布并回装公开正式包）
 
 验收日期：2026-10-11（北京时间）。需求见[PLAN-1.3.0.md](PLAN-1.3.0.md)，恢复状态见[EXECUTION-1.3.0.md](EXECUTION-1.3.0.md)。实机为小米9 SE / Android15 API35 / WebView153 / 1080×2340 / density440；Android16 API36使用模拟器，沿用600×1400/density300覆盖值，不当作Android16实体机。

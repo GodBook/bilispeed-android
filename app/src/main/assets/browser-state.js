@@ -64,8 +64,8 @@
         if (!style && document.head) {
             style=document.createElement('style'); style.id='bilispeed-theme';
             style.textContent=`
-html[data-bilispeed-theme] { --bs-bg:#fff;--bs-surface:#f5f6f8;--bs-ink:#24262e;--bs-muted:#656775;--bs-border:#e1e2e8;--bs-accent:#b52d5b; }
-html[data-bilispeed-theme="dark"] { --bs-bg:#191a1f;--bs-surface:#24262e;--bs-ink:#eeeef2;--bs-muted:#b2b4bf;--bs-border:#50525f;--bs-accent:#ff91b2; }
+html[data-bilispeed-theme] { --bs-bg:#fff;--bs-surface:#f5f6f8;--bs-ink:#24262e;--bs-muted:#656775;--bs-border:#e1e2e8;--bs-accent:#b52d5b;--bs-pressed:#fff0f5; }
+html[data-bilispeed-theme="dark"] { --bs-bg:#191a1f;--bs-surface:#24262e;--bs-ink:#eeeef2;--bs-muted:#b2b4bf;--bs-border:#50525f;--bs-accent:#ff91b2;--bs-pressed:#3a2932; }
 html[data-bilispeed-theme][data-bilispeed-touch],html[data-bilispeed-theme] .my-page {
  --bg1:var(--bs-bg);--bg2:var(--bs-surface);--bg3:var(--bs-surface);--bg1_float:var(--bs-bg);--bg2_float:var(--bs-surface);--text1:var(--bs-ink);--text2:var(--bs-muted);--text3:var(--bs-muted);--line_regular:var(--bs-border);--line_light:var(--bs-border);--graph_bg_thin:var(--bs-surface);--graph_bg_regular:var(--bs-surface);--brand_pink:var(--bs-accent);
 }
@@ -78,6 +78,7 @@ html[data-bilispeed-touch][data-bilispeed-theme] :is(.nav-search-input,.nav-sear
 html[data-bilispeed-touch][data-bilispeed-theme] :is(#bilispeed-video-tabs,#bilispeed-episodes,.bilispeed-episode-list) {background:var(--bs-bg)!important;color:var(--bs-ink)!important;}
 html[data-bilispeed-touch][data-bilispeed-theme] :is(#bilispeed-video-tabs button,#bilispeed-episodes a) {background:var(--bs-surface)!important;color:var(--bs-ink)!important;border-color:var(--bs-border)!important;}
 html[data-bilispeed-touch][data-bilispeed-theme] :is(#bilispeed-video-tabs button[aria-selected=true],#bilispeed-episodes a[aria-current]) {color:var(--bs-accent)!important;}
+html[data-bilispeed-touch][data-bilispeed-theme] :is(#bilispeed-video-tabs button:enabled:active,#bilispeed-episodes a:active,#bilispeed-episodes a[aria-current],#bilispeed-episodes button:enabled:active) {background:var(--bs-pressed)!important;color:var(--bs-accent)!important;}
 html[data-bilispeed-touch][data-bilispeed-theme] #bilispeed-episodes .episode-group {background:var(--bs-surface)!important;}
 html[data-bilispeed-touch][data-bilispeed-theme] #bilispeed-episodes :is(.episode-kind,.episode-count,.episode-index,time,p) {color:var(--bs-muted)!important;}
 html[data-bilispeed-touch][data-bilispeed-theme] #bilispeed-episodes button {color:var(--bs-accent)!important;}

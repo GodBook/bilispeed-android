@@ -157,7 +157,7 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
     html[${attribute}] #mirror-vdcon .toolbar-left-item-wrap { flex: 1; min-width: 0; }
     html[${attribute}] #mirror-vdcon .video-toolbar-left-item { width: auto !important; min-width: 0 !important; }
     html[${attribute}] #mirror-vdcon .video-toolbar-item-text { font-size: 12px !important; }
-    html[${attribute}] #mirror-vdcon .video-info-container { margin: 0 !important; min-height: 0 !important; }
+    html[${attribute}] #mirror-vdcon .video-info-container { margin: 0 !important; height: auto !important; min-height: 0 !important; max-height: none !important; }
     html[${attribute}] #mirror-vdcon .video-toolbar-right { display: none !important; }
     html[${attribute}] #mirror-vdcon .video-toolbar-left > * { min-height: 40px; margin-right: 8px !important; }
     html[${attribute}] #bilibili-player { width: 100% !important; height: 100% !important; }
@@ -228,10 +228,15 @@ html[${attribute}] .bpx-player-dm-setting-wrap[data-bilispeed-danmaku-closed] { 
     html[${attribute}] #bilispeed-video-tabs { display: flex; border-bottom: 1px solid #eee; }
     html[${attribute}] #bilispeed-video-tabs button {
         flex: 1; min-height: 44px; border: 0; background: #fff; color: #61666d; font-size: 15px;
+        touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+        transition: color .18s ease, background-color .18s ease, transform .18s ease;
     }
     html[${attribute}] #bilispeed-video-tabs button:focus-visible { outline: 2px solid #e8557f; }
     html[${attribute}] #bilispeed-video-tabs button:disabled { color: #9499a0; }
     html[${attribute}] #bilispeed-video-tabs button:enabled:active { background: #fff0f5; color: #e8557f; }
+    @media (prefers-reduced-motion: reduce) {
+        html[${attribute}] #bilispeed-video-tabs button { transition: none; }
+    }
 
     html[${attribute}] .search-layout,
     html[${attribute}] .search-header,

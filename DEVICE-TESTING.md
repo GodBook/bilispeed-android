@@ -1,4 +1,26 @@
-# 2026-10-11 1.3.0 测试入口
+# 2026-10-14 1.3.1 测试入口
+
+连接手机的完整回归入口（保存、恢复原偏好及临时系统设置，保留 Cookies）：
+
+```powershell
+.\scripts\build-apk.ps1 -RunTests -AndroidSdk D:\dev\android-sdk -DeviceSerial 1944b301 -TestLogName device-1.3.1-full-regression.txt
+```
+
+播放器专项新增竖屏自动隐藏 / 单击显隐、面板与长按进度保护、未改变数值的进度按压恢复隐藏。夹具先等待原生竖屏尺寸和文档加载信号，再读取 WebView；字幕避让检查等待动画后的几何条件。保留原有播放、手势、切集、画质和点击区域断言。
+
+官网检查使用安装后的正式构建与真实 ADB 输入，不注入替换版应用脚本：
+
+```powershell
+.\scripts\run-device-release-checks.ps1 -DeviceSerial 1944b301 -FromStage autohide
+```
+
+`device-player-smoke.mjs 1944b301 autohide` 覆盖 10 个状态，包括 4 秒真实拖动、面板保持、单击 / 双击互斥与通过 CDP 模拟减少动态效果后的 CSS 检查。记录前等待控制条过渡结束，保留至少 44px 的点击区域断言；同时检查真实视频的信息区完整容纳播放数据和授权说明，并与点赞栏保持分离。证据默认使用 version.properties 中的版本前缀，可用 BILISPEED_EVIDENCE_PREFIX 区分轮次。
+
+手机无法联网时，可使用已有的 localhost HTTPS 隧道，TLS 仍在官方服务器终止，不记录账号或请求正文：先单独运行 `node scripts/device-network-proxy.mjs`，再执行 `adb -s 1944b301 reverse tcp:8877 tcp:8877`，给检查脚本传入 `-InspectionProxy 127.0.0.1:8877`。检查结束后移除该 reverse，并结束隧道进程。`-InspectOnly` 可启动受保护的手工检查会话；结束时创建 `/sdcard/Android/data/app.bilispeed.browser/files/stop-ui-inspection` 标记，脚本自动关闭调试、移除 9222 转发并恢复偏好。测试入口现在会先唤醒屏幕，已有锁屏仍需用户解锁。
+
+本版设备、通过结果和保留的失败轮次见 VALIDATION.md；下方为历史记录。
+
+# 2026-10-11 1.3.0 测试入口（历史）
 
 本页保留PLAN-1.3.0.md的复现入口；当前状态见EXECUTION-1.3.0.md，版本化结果及发布核验见VALIDATION.md。构建成功与正式发布分别记录。
 

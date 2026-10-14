@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { connectDevice } from './device-cdp.mjs';
 const serial=process.argv[2];if(!serial)throw new Error('Pass device serial');
+const version=(await readFile(new URL('../version.properties',import.meta.url),'utf8')).match(/^versionName=(.+)$/m)[1].trim();
+const prefix=process.env.BILISPEED_EVIDENCE_PREFIX||version+'-';
+if(!/^[A-Za-z0-9.-]+$/.test(prefix))throw new Error('Invalid evidence prefix');
 const page=await connectDevice(), evidence=[];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 const adb=args=>execFileSync('adb',['-s',serial,...args],{timeout:30000,maxBuffer:16*1024*1024});
@@ -11,15 +14,25 @@ async function wait(expression,timeout=45000) {
     while(Date.now()<end) {try{if(await page.evaluate(expression))return;}catch(_){}await delay(250);}
     throw new Error('Timed out: '+expression);
 }
-async function screenshot(name) {await writeFile(`artifacts/device-1.3.0-${name}.png`,adb(['exec-out','screencap','-p']));}
+async function screenshot(name) {await writeFile(`artifacts/device-${prefix}${name}.png`,adb(['exec-out','screencap','-p']));}
 async function tap(selector) {
+    for(let preparation=0;preparation<3;preparation++) {
+    if(await page.evaluate(`!!document.querySelector(${JSON.stringify(selector)})?.closest('#bilispeed-touch-controls')&&document.getElementById('bilispeed-touch-controls').dataset.hidden==='true'`)) {
+        await tap('.bpx-player-video-area');
+        await wait('document.getElementById("bilispeed-touch-controls").dataset.hidden==="false"');
+    }
     await page.evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e)throw Error('Missing target');e.scrollIntoView({block:'center',behavior:'instant'});return true})()`);
-    await delay(150);
-    const point=await page.evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)}),r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return {x,y,width:visualViewport.width,hit:!!document.elementFromPoint(x,y)?.closest(${JSON.stringify(selector)})};})()`);
-    assert(point.hit,'Touch target obscured: '+selector);
+    await delay(250);
+    const point=await page.evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)}),r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return {x,y,width:visualViewport.width,visible:e.checkVisibility(),hit:!!document.elementFromPoint(x,y)?.closest(${JSON.stringify(selector)})};})()`);
+    // Rotation/autohide may change the target during preparation. Remap only
+    // before sending input; an already executed action is never retried.
+    if(!point.hit||!point.visible)continue;
     const targets=await(await fetch('http://127.0.0.1:9222/json')).json();
     const native=JSON.parse(targets.find(e=>e.id===page.target.id).description),scale=native.width/point.width;
     adb(['shell','input','tap',String(Math.round(native.screenX+point.x*scale)),String(Math.round(native.screenY+point.y*scale))]);await delay(250);
+    return;
+    }
+    throw new Error('Touch target obscured: '+selector);
 }
 async function tab(label) {
     adb(['shell','uiautomator','dump','/data/local/tmp/bilispeed-1.3-ui.xml']);
@@ -77,8 +90,10 @@ try {
         assert.equal(String(after.quality.nowQ),value);assert(Math.abs(after.time-before.time)<=3);assert.equal(after.rate,2.5);
         record('official-touch-quality-'+value,{before,after});await screenshot('quality-'+value);await tap('[data-bilispeed-control=close-panel]');
     }
-    await tap('[data-bilispeed-control=fullscreen]');await wait('document.documentElement.hasAttribute("data-bilispeed-fullscreen")');
+    await tap('[data-bilispeed-control=fullscreen]');await wait('document.documentElement.hasAttribute("data-bilispeed-fullscreen")&&innerWidth>innerHeight');
+    await delay(500);
     if(await page.evaluate('document.querySelector("#bilispeed-touch-controls").dataset.hidden==="true"'))await tap('.bpx-player-video-area');
+    await wait('document.querySelector("#bilispeed-touch-controls").dataset.hidden==="false"');
     await tap('[data-bilispeed-control=more]');await tap('[data-bilispeed-control=more-quality]');await tap('[data-quality-option="32"]');
     await wait('document.querySelector("[data-bilispeed-control=quality-status]")?.textContent.startsWith("已切换")',55000);
     assert.equal(await page.evaluate('document.documentElement.hasAttribute("data-bilispeed-fullscreen")'),true);
@@ -86,5 +101,5 @@ try {
     await tap('[data-bilispeed-control=close-panel]');await tap('[data-bilispeed-control=fullscreen]');await wait('!document.documentElement.hasAttribute("data-bilispeed-fullscreen")');
 } finally {
     try { evidence.push({name:'final-observation',state:await page.evaluate(`({url:location.href,quality:window.player?.getQuality?.(),time:window.player?.getCurrentTime?.(),status:document.querySelector('[data-bilispeed-control=quality-status]')?.textContent,clicks:window.qualityClickTrace})`)}); } catch (_) { }
-    await writeFile('artifacts/device-1.3.0-new-live.json',JSON.stringify(evidence,null,2)+'\n');page.close();
+    await writeFile(`artifacts/device-${prefix}new-live.json`,JSON.stringify(evidence,null,2)+'\n');page.close();
 }

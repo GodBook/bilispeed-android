@@ -10,6 +10,8 @@ function Invoke-PreferenceProbe([string]$Method) {
 function Test-DeviceReady {
     $state = ([string](& $adb -s $DeviceSerial get-state 2>$null)).Trim()
     if ($state -ne 'device') { throw "Selected device $DeviceSerial is not online ($state)." }
+    & $adb -s $DeviceSerial shell input keyevent KEYCODE_WAKEUP
+    if ($LASTEXITCODE -ne 0) { throw 'Could not wake the test display.' }
     $policy = (& $adb -s $DeviceSerial shell dumpsys window policy) -join "`n"
     if ($policy -match '(?m)^\s*(showing|mIsShowing|inputRestricted)=true') {
         throw 'The selected phone is locked. Unlock it before UI tests; no fixture tests were started.'

@@ -1,14 +1,15 @@
 // Run against the opt-in DeviceUiInspectionTest, with adb forward tcp:9222.
 // Native taps exercise the installed APK; no replacement app scripts are injected.
 import { connectDevice } from './device-cdp.mjs';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 
 const serial = process.argv[2] || process.env.BILISPEED_TEST_SERIAL;
 if (!serial) throw new Error('Pass the connected phone serial');
 const stage = process.argv[3] || 'course';
-const prefix = process.env.BILISPEED_EVIDENCE_PREFIX || '1.2.9-';
+const version = (await readFile(new URL('../version.properties', import.meta.url), 'utf8')).match(/^versionName=(.+)$/m)[1].trim();
+const prefix = process.env.BILISPEED_EVIDENCE_PREFIX || version + '-';
 if (!/^[A-Za-z0-9.-]+$/.test(prefix)) throw new Error('Invalid evidence prefix');
 const page = await connectDevice();
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -17,15 +18,20 @@ const q = value => 'document.querySelector(' + JSON.stringify(value) + ')';
 const records = [];
 let lastPoint;
 
-async function waitFor(expression, seconds = 45) {
+async function waitFor(expression, seconds = 45, stableMilliseconds = 0) {
     const deadline = Date.now() + seconds * 1000;
+    let readySince = 0;
     while (Date.now() < deadline) {
         try {
-            if (await page.evaluate('Boolean(' + expression + ')')) return;
+            if (await page.evaluate('Boolean(' + expression + ')')) {
+                if (!readySince) readySince = Date.now();
+                if (Date.now() - readySince >= stableMilliseconds) return;
+            } else readySince = 0;
         } catch (error) {
             // The old execution context can disappear between the native tap
             // and this read. Retry only navigation-related inspection errors.
             if (!/navigated or closed|Execution context was destroyed|Cannot find context/.test(error.message)) throw error;
+            readySince = 0;
         }
         await delay(300);
     }
@@ -79,13 +85,23 @@ async function screenshot(name) {
 }
 
 async function record(name) {
+    await waitFor('!document.getElementById("bilispeed-touch-controls").getAnimations().some(animation=>animation.playState==="running")', 5);
     const result = await page.evaluate(`(()=>{
         const rect = element => {const r=element.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height};};
-        return {url:location.href,title:document.title,width:innerWidth,documentWidth:document.documentElement.scrollWidth,
+        const info=document.querySelector('#mirror-vdcon .video-info-container');
+        const meta=info?.querySelector('.video-info-meta');
+        const toolbar=document.querySelector('#mirror-vdcon .video-toolbar-container');
+        return {url:location.href,title:document.title,theme:document.documentElement.dataset.bilispeedTheme,width:innerWidth,documentWidth:document.documentElement.scrollWidth,
+            information:info&&meta&&toolbar?{container:rect(info),meta:rect(meta),toolbar:rect(toolbar)}:null,
             fullscreen:!!window.__BILI_TOUCH_FULLSCREEN__||!!document.fullscreenElement,domFullscreen:!!document.fullscreenElement,
             fullscreenLayout:document.documentElement.hasAttribute('data-bilispeed-fullscreen'),
             player:rect(document.querySelector('.bpx-player-video-area')),height:innerHeight,
             initialFullscreen:window.__BILI_TOUCH_FULLSCREEN__,state:window.__BiliSpeed.snapshot(),
+            controlState:{hidden:document.getElementById('bilispeed-touch-controls').dataset.hidden,
+                ariaHidden:document.getElementById('bilispeed-touch-controls').getAttribute('aria-hidden'),
+                inert:document.getElementById('bilispeed-touch-controls').inert,
+                opacity:getComputedStyle(document.getElementById('bilispeed-touch-controls')).opacity,
+                panelHidden:document.getElementById('bilispeed-player-panel').hidden},
             video:Array.from(document.querySelectorAll('video')).map(v=>({ready:v.readyState,paused:v.paused,time:v.currentTime,rate:v.playbackRate})),
             counts:Array.from(document.querySelectorAll('#bilispeed-episodes .episode-count')).map(e=>e.textContent),
             controls:Array.from(document.querySelectorAll('#bilispeed-touch-controls > button:not([hidden])')).map(e=>({name:e.dataset.bilispeedControl,label:e.textContent,disabled:e.disabled,...rect(e)})),
@@ -95,6 +111,11 @@ async function record(name) {
     records.push({ name, ...result });
     await writeFile(`artifacts/device-${prefix}player-${stage}.json`, JSON.stringify(records, null, 2) + '\n');
     assert.ok(result.documentWidth <= result.width + 2, 'Page overflow');
+    if(!result.fullscreen&&result.information){
+        const {container,meta,toolbar}=result.information;
+        assert.ok(meta.y+meta.h<=container.y+container.h+1,'Video metadata overflows its container');
+        assert.ok(toolbar.y>=meta.y+meta.h-1,'Video metadata overlaps the action bar');
+    }
     assert.equal(result.fullscreenLayout, result.fullscreen, 'Stale fullscreen layout on a new document');
     assert.equal(result.initialFullscreen, result.fullscreen, 'Stale fullscreen bootstrap');
     for (const button of result.controls) {
@@ -125,7 +146,55 @@ async function waitPart(part) {
 }
 
 try {
-    if (stage === 'course') {
+    if (stage === 'autohide') {
+        await navigate('https://www.bilibili.com/video/BV1T6VFzAE1c/?p=1');
+        await tap(selector('play'));
+        await waitFor('!document.querySelector("video").paused');
+        // Official initialization can replace the first player host. Verify the
+        // complete hidden state stays settled after that mount and its fade.
+        await waitFor(`(()=>{const c=document.getElementById('bilispeed-touch-controls');return c.dataset.hidden==='true'&&c.inert&&c.getAttribute('aria-hidden')==='true'&&getComputedStyle(c).opacity==='0'&&getComputedStyle(c).visibility==='hidden';})()`, 45, 600);
+        await screenshot('portrait-auto-hidden'); await record('portrait-playing-auto-hides');
+        await tap('.bpx-player-video-area');
+        await waitFor('document.getElementById("bilispeed-touch-controls").dataset.hidden==="false"');
+        assert.equal(await page.evaluate('document.querySelector("video").paused'), false);
+        await screenshot('portrait-tap-controls'); await record('portrait-single-tap-reveals-without-pausing');
+        await tap(selector('speed')); await tap('[data-rate="1.5"]');
+        await waitFor('document.querySelector("video").playbackRate===1.5');
+        await delay(3400);
+        assert.ok(await page.evaluate('!document.getElementById("bilispeed-player-panel").hidden&&document.getElementById("bilispeed-touch-controls").dataset.hidden==="false"'));
+        await screenshot('portrait-speed-panel'); await record('portrait-speed-panel-stays-visible');
+        await tap(selector('close-panel'));
+        await waitFor('document.getElementById("bilispeed-touch-controls").dataset.hidden==="true"');
+        await record('portrait-panel-close-resumes-auto-hide');
+        await tap('.bpx-player-video-area');
+        await waitFor('document.getElementById("bilispeed-touch-controls").dataset.hidden==="false"');
+        await tap('.bpx-player-video-area');
+        await waitFor('document.getElementById("bilispeed-touch-controls").dataset.hidden==="true"');
+        assert.equal(await page.evaluate('document.querySelector("video").paused'), false);
+        await record('portrait-second-tap-hides-without-pausing');
+        const [x, y] = await point('.bpx-player-video-area', .5, .25);
+        execFileSync('adb', ['-s', serial, 'shell', `input tap ${x} ${y}; input tap ${x} ${y}`]);
+        await waitFor('document.querySelector("video").paused&&document.getElementById("bilispeed-touch-controls").dataset.hidden==="false"');
+        await record('portrait-double-tap-pauses-once');
+        // A four-second real finger drag must outlast the idle timeout.
+        const from = await point(selector('seek'), .15, .5), to = await point(selector('seek'), .25, .5);
+        execFileSync('adb', ['-s', serial, 'shell', 'input', 'swipe', ...from.map(String), ...to.map(String), '4000']);
+        assert.equal(await page.evaluate('document.getElementById("bilispeed-touch-controls").dataset.hidden'), 'false');
+        await record('portrait-long-seek-keeps-controls');
+        await waitFor('document.getElementById("bilispeed-touch-controls").dataset.hidden==="true"');
+        await record('portrait-seek-release-resumes-auto-hide');
+        await tap(selector('more'));
+        await screenshot('portrait-more-panel'); await record('portrait-more-options-fit');
+        await tap(selector('close-panel'));
+        await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+        try {
+            await tap(selector('speed'));
+            assert.equal(await page.evaluate('getComputedStyle(document.getElementById("bilispeed-touch-controls")).transitionDuration'), '0s');
+            assert.equal(await page.evaluate('getComputedStyle(document.getElementById("bilispeed-player-panel")).animationName'), 'none');
+            await record('reduced-motion-disables-control-and-panel-animation');
+            await tap(selector('close-panel'));
+        } finally { await page.send('Emulation.setEmulatedMedia', { features: [] }); }
+    } else if (stage === 'course') {
         await navigate('https://www.bilibili.com/video/BV1T6VFzAE1c/?p=1');
         await waitFor('document.querySelectorAll("[data-episode-kind=parts] a").length===73&&document.querySelectorAll("[data-episode-kind=collection] a").length===2');
         assert.equal(await page.evaluate(q('[data-episode-kind=collection] .episode-count') + '.textContent'), '2 / 2');
@@ -227,7 +296,7 @@ try {
         await tap(selector('speed')); await tap('[data-rate="1.25"]');
         await waitFor('document.querySelector("video").playbackRate===1.25');
         await tap(selector('close-panel')); await record('single-video-speed');
-    } else throw new Error('Use course, boundaries, collection-fullscreen, or single');
+    } else throw new Error('Use autohide, course, boundaries, collection-fullscreen, or single');
 } catch (error) {
     const state=await page.evaluate(`({url:location.href,ready:document.readyState,hidden:document.querySelector('#bilispeed-touch-controls')?.dataset.hidden,navigation:window.__BiliTouchVideo?.getNavigation?.(),video:[...document.querySelectorAll('video')].map(v=>({ready:v.readyState,paused:v.paused,time:v.currentTime})),previous:document.querySelector('[data-bilispeed-control=previous]')?.outerHTML})`).catch(()=>null);
     await writeFile(`artifacts/device-${prefix}player-${stage}-failure.json`,JSON.stringify({message:error.message,lastPoint,state},null,2)+'\n');
