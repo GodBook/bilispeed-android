@@ -1,6 +1,6 @@
 # Android 验收记录
 
-## 1.3.2：新图标与运行开销优化
+## 1.3.2：新图标与运行开销优化（已发布并回装公开正式包）
 
 验收日期：2026-10-14（北京时间）。使用 USB `1944b301` / 小米 9 SE / Android 15 API 35 / WebView 153.0.8010.36 / 1080×2340 / density 440。本次没有另行运行 Android 16 模拟器；APK 的 targetSdk 为 36，minSdk 为 26。
 
@@ -43,6 +43,14 @@
 另一应用完成设备恢复后，课程 / 单视频 / 边界 / 全屏合集 / 新功能 / 深色页面的 36 个状态完整通过，结合已完整通过的首页及自动隐藏 20 个状态，共 56 个。新功能包括实际 480P、360P、自动及横屏 480P 切换，检查播放位置、2.5x 和全屏状态保留；返回列表保位、重复入口保留文档及原生 / 网页统一主题也通过。深色覆盖首页、搜索、热门、动态、历史、稍后再看。
 
 测试结束后，手机实际安装包 SHA-256 核对为上述 `298D2829…`（`device-1.3.2-tested-installed-sha256.txt`），生产文件指纹未改变。原生偏好及每次会话进入时的系统设置已恢复；最终系统读取为休眠 600000、自动旋转 0、user_rotation 0、字体 1.0。官网通过本任务 localhost HTTPS 隧道联网，TLS 在官方服务器终止，没有记录账号或请求正文；真实账号的提交、删除与购买未执行。
+
+发布完成：[v1.3.2](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.2)，源码与标签提交为 `0d6022f1d392fad9b129a105e5268ec882bf719e`。从该提交重建的正式 APK 为 **2131604 字节，SHA-256 `F754F6C965820D12CC1AA012F8E710D14D0E333D0EEF7492FD5E65269008455B`**。84 个 ZIP 条目逐项比较，仅 `META-INF/version-control-info.textproto` 与手机实测候选不同（`device-1.3.2-release-compare.json`）。
+
+匿名 GitHub API 读取返回 403，元数据通过 `verify-published-release.ps1 -AuthenticatedMetadata` 的已登录 CLI 核对；三个 Release 附件及 `latest/download/update.json` 仍通过匿名公开 URL 下载。正式 / latest 标签、源码提交、三个资产摘要、公开更新 schema / 包名 / 版本 / 大小 / APK URL、SHA256SUMS 和原签名全部通过，记录为 `device-1.3.2-public-verification.json` 与 `github-release.json`。
+
+公开下载的正式 APK 已覆盖安装同一手机，再拉取 `installed.apk` 核对上述正式包哈希及 1.3.2 / code17 / 无 DEBUGGABLE，记录为 `device-1.3.2-installed-public.json`，下载及拉取副本归档于 `artifacts/published-1.3.2`。SDK 安装使用的两份英文临时路径 APK 副本保留在本机 Temp，避免中文路径兼容问题；不影响手机运行。
+
+收尾完成：一次性测试 runner 已卸载，可从源码重新构建；正式应用调试 socket、本任务 9222 forward、8877 reverse 和 localhost 隧道均为 0 / 已关闭（`device-1.3.2-final-cleanup.json`）。手机停留在正式版设置页，1x 与记住倍速保持选中，截图 / XML 为 `device-1.3.2-published-settings.png/xml`。主应用与 Cookies 保留，最终验收记录单独提交 main，发布标签保持不动。
 
 ## 1.3.1：竖屏控制条自动隐藏与触摸动效（已发布并回装公开正式包）
 

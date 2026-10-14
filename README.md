@@ -4,7 +4,7 @@
 
 [下载已发布 APK](https://github.com/GodBook/bilispeed-android/releases/latest) · [源码](https://github.com/GodBook/bilispeed-android)
 
-当前版本为 **[1.3.2 / versionCode 17](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.2)**。应用图标更换为蓝色玻璃质感电视图案，支持自适应形状和 Android 主题图标。长列表保位优先定位屏幕内卡片，新增网页内容只查询媒体节点，播放进度更新减少重复字幕查询及按钮刷新。沿用竖屏控制条自动隐藏、单击显隐、双击暂停 / 播放、统一主题、五项底部导航、下拉刷新及全屏连续切集。手机实测范围、性能对照与正式附件校验见 [VALIDATION.md](VALIDATION.md)。
+当前正式版本为 **[1.3.2 / versionCode 17](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.2)**，公开 APK 已覆盖安装连接手机并核对哈希。应用图标更换为蓝色玻璃质感电视图案，支持自适应形状和 Android 主题图标。长列表保位优先定位屏幕内卡片，新增网页内容只查询媒体节点，播放进度更新减少重复字幕查询及按钮刷新。沿用竖屏控制条自动隐藏、单击显隐、双击暂停 / 播放、统一主题、五项底部导航、下拉刷新及全屏连续切集。手机实测范围、性能对照与正式附件校验见 [VALIDATION.md](VALIDATION.md)。
 
 ## 安装与使用
 

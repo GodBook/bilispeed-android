@@ -30,7 +30,7 @@ adb -s 1944b301 shell touch /sdcard/Android/data/app.bilispeed.browser/files/sto
 
 播放器工具同时核对可信 pointerdown 的实际目标；自动隐藏造成点按未命中时，只在同一文档 / URL 且明确没有命中目标后重新定位。已匹配动作执行一次，跳转与播放结果继续使用原断言。
 
-最终结果、失败记录和发布校验见 VALIDATION.md。下方为历史测试入口。
+1.3.2 已正式发布，公开下载 APK 已覆盖安装连接手机，并拉取安装包核对同一 SHA-256。测试 runner、调试 socket、本任务转发和隧道已清理。最终结果、失败记录和发布校验见 VALIDATION.md。下方为历史测试入口。
 
 # 2026-10-14 1.3.1 测试入口（历史）
 
