@@ -1,12 +1,16 @@
 # Android 验收记录
 
-## 1.3.3：长按菜单单击关闭（发布候选）
+## 1.3.3：长按菜单单击关闭（已发布并验证公开包）
 
-验收日期：2026-10-19（北京时间）。使用 `emulator-5580` / Android 16 API 36 / WebView 133.0.6943.137，当前没有连接实体手机。本次新增正式版本 1.3.3 / code18，保留远端已精简的 README，沿用原发布签名。
+验收日期：2026-10-19（北京时间）。使用 `emulator-5580` / Android 16 API 36 / WebView 133.0.6943.137，当前没有连接实体手机。正式版本为 1.3.3 / code18，沿用原发布签名。
 
 发布候选菜单输入 2 项和升级校验 12 项 **14/14 通过**（82.842 秒），日志 `artifacts/emulator-1.3.3-release-regression.txt`。覆盖全屏单击画面 / 控件优先关闭菜单、菜单选项和重复打开，以及版本、签名、哈希、重定向、取消和安装文件隔离。关联的 6 项手势验证沿用下方初始修复记录；播放器代码未再次改变。未重跑整套回归或进行官网联测。
 
-测试包 SHA-256 `71F9C770FF943DC7D56002C1C815E8BF26F9ECE78783740C7FFC5A08D3D82EA4`，归档于 `artifacts/tested-1.3.3-final`。Release、lint（0 errors / 4 项既有 warnings）、JavaScript 语法和签名校验通过，签名证书 SHA-256 仍为 `e2d8ed51e71288c8f2a0ea81e3f7ac23aba499d59ed6d7eace205e78960f94b3`。测试后原偏好及临时系统设置已恢复。正式包将从本次源码提交重建，并与该测试包逐项比较。
+测试包 SHA-256 `71F9C770FF943DC7D56002C1C815E8BF26F9ECE78783740C7FFC5A08D3D82EA4`，归档于 `artifacts/tested-1.3.3-final`。Release、lint（0 errors / 4 项既有 warnings）、JavaScript 语法和签名校验通过，签名证书 SHA-256 仍为 `e2d8ed51e71288c8f2a0ea81e3f7ac23aba499d59ed6d7eace205e78960f94b3`。测试后原偏好及临时系统设置已恢复。
+
+正式包从提交 `3836f29d26dcb18e3922c0a7d55f5117a72227e0` 重建，标签为 `v1.3.3`。与测试包的 84 个 ZIP 条目逐项比较，仅 `META-INF/version-control-info.textproto` 不同；证据 `artifacts/emulator-1.3.3-apk-comparison.json`。公开 APK 为 2131684 字节，SHA-256 **`07EA9F977DBBB52B96D6CAFD4C8DEE6A0780013813915CC73E76FB9CBDF42A48`**，地址为 [1.3.3 Release](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.3)。
+
+发布后应用内真实更新下载及原签名验证 **1/1 通过**（6.443 秒），日志 `artifacts/emulator-1.3.3-published-update.txt`。公开 APK、`update.json`、`SHA256SUMS.txt` 与 latest 更新清单均已匿名下载，摘要、大小、版本、原签名及最新正式版本一致。匿名 API 限流后仅发布元数据改用已登录 CLI 读取；证据 `artifacts/device-1.3.3-public-verification.json`。从模拟器拉回的实际安装包 `artifacts/emulator-1.3.3-installed.apk` 与公开 APK 同一 SHA-256。测试 runner 已移除，本任务模拟器已关闭。
 
 ## 初始修复验证：长按菜单单击关闭（1.3.2 本地包，未发布）
 

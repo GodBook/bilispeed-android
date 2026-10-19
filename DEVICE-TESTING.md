@@ -11,7 +11,9 @@ $menuUpdateTests = @(
 .\scripts\build-apk.ps1 -AndroidSdk D:\dev\android-sdk -DeviceSerial emulator-5580 -TestFilter $menuUpdateTests -TestLogName emulator-1.3.3-release-regression.txt
 ```
 
-发布后用 `PublishedUpdateSmokeTest#downloadsThePublishedReleaseAndVerifiesItsRealSignature` 检查应用内更新渠道，再运行 `scripts/verify-published-release.ps1` 核对公开附件、latest 更新信息及原签名。正式包须从已提交源码重新构建，并用 `scripts/compare-release-apks.ps1` 对照测试包。测试范围与结果见 [VALIDATION.md](VALIDATION.md)；下方保留历史测试入口。
+发布后用 `PublishedUpdateSmokeTest#downloadsThePublishedReleaseAndVerifiesItsRealSignature` 检查应用内更新渠道，再运行 `scripts/verify-published-release.ps1` 核对公开附件、latest 更新信息及原签名。正式包须从已提交源码重新构建，并用 `scripts/compare-release-apks.ps1` 对照测试包。
+
+1.3.3 已发布，候选 14/14 及发布后更新检查 1/1 通过。公开附件及 latest 更新信息均已匿名下载核验，模拟器安装包哈希一致。匿名 API 限流时可给公开核验脚本加 `-AuthenticatedMetadata`，仅发布元数据改用登录态；附件仍匿名下载。测试范围与结果见 [VALIDATION.md](VALIDATION.md)；下方保留历史测试入口。
 
 # 2026-10-14 1.3.2 测试入口（历史）
 
