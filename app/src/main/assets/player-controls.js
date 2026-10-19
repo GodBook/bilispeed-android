@@ -689,7 +689,7 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
     }
 
     function ignoreTarget(target) {
-        return target instanceof Element && !!target.closest('#bilispeed-touch-controls, button, input, select, textarea, a, [role="button"], .bpx-player-control-wrap, .bpx-player-ending-wrap, .bpx-player-dm-setting, .bpx-player-dm-setting-wrap');
+        return target instanceof Element && !!target.closest('#bilispeed-touch-controls, button, input, select, textarea, a, [role="button"], .bpx-player-control-wrap, .bpx-player-ending-wrap, .bpx-player-dm-setting, .bpx-player-dm-setting-wrap, .bpx-player-contextmenu');
     }
 
     function bindHost(target) {
@@ -697,6 +697,12 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
         managedHosts.add(target);
         target.addEventListener('touchstart', event => {
             if (target !== host || suspended) return;
+            // The official menu closes on a window click. Let WebView generate
+            // that click instead of consuming it as a player tap or swipe.
+            if (document.querySelector('#bilibili-player .bpx-player-contextmenu.bpx-player-active')) {
+                cancelPreview();
+                return;
+            }
             if (event.touches.length !== 1) { cancelPreview(); update(); return; }
             if (ignoreTarget(event.target)) { cancelTap(); return; }
             // A new finger contact is an intentional tap, not the trailing click of a swipe.

@@ -2,9 +2,9 @@
 
 Android WebView 浏览器，默认打开 B 站电脑端网页，并提供手机触屏布局、底部导航和倍速控制。内容与播放权限由 B 站官方网页决定。
 
-[下载 APK](https://github.com/GodBook/bilispeed-android/releases/latest) · [1.3.2 发布页](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.2)
+[下载 APK](https://github.com/GodBook/bilispeed-android/releases/latest) · [1.3.3 发布页](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.3)
 
-当前版本为 **1.3.2（versionCode 17）**。最低 Android 8（API 26），目标和编译 SDK 为 Android 16（API 36）。
+当前版本为 **1.3.3（versionCode 18）**。最低 Android 8（API 26），目标和编译 SDK 为 Android 16（API 36）。
 
 ## 安装与使用
 
@@ -17,6 +17,7 @@ Android WebView 浏览器，默认打开 B 站电脑端网页，并提供手机�
 - 倍速范围 0.25–5x，滑杆步长 0.05，也可输入两位小数。默认记住上次选择；关闭记忆后，下次启动恢复 1x。直播保持 1x。
 - 播放栏提供暂停、进度、上一集 / 下一集、倍速、音量、字幕和全屏；竖屏下部分操作位于“更多”。
 - 单击视频显示或收起控件，双击暂停或继续；左右滑动预览进度，松手跳转，一次滑动最多调节 120 秒。
+- 长按弹出的官网菜单可单击菜单外关闭，关闭时不触发播放或退出全屏；菜单选项仍可使用。
 - 播放栏约 3 秒无操作后隐藏，拖动进度或打开面板时保持显示。
 - 分 P 和合集分别显示，长选集列表可展开、收起或定位当前集；全屏切集保持横屏。
 - 画质和字幕选项来自官方播放器，是否可用取决于视频、登录状态和账号权限。

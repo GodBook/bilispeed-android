@@ -226,8 +226,21 @@ public class PlayerControlsInstrumentationTest {
         instrumentation.runOnMainSync(() -> {
             if (!activity.fullscreenForTesting()) activity.browserForTesting().requestFocus();
         });
-        float[] location = point(selector, .5, .3);
-        input(MotionEvent.ACTION_DOWN, location); input(MotionEvent.ACTION_UP, location);
+        shortTap(selector, .5, .3);
+    }
+
+    private void shortTap(String selector, double x, double y) throws Exception {
+        float[] location = point(selector, x, y);
+        // Keep a short contact even when video decoding deschedules the test
+        // thread, matching the explicit timestamps used by doubleTap().
+        long start = SystemClock.uptimeMillis();
+        MotionEvent down = fingerInput(start, start, MotionEvent.ACTION_DOWN, location[0], location[1]);
+        MotionEvent up = fingerInput(start, start + 50, MotionEvent.ACTION_UP, location[0], location[1]);
+        try {
+            assertTrue(instrumentation.getUiAutomation().injectInputEvent(down, false));
+            assertTrue(instrumentation.getUiAutomation().injectInputEvent(up, false));
+        } finally { down.recycle(); up.recycle(); }
+        SystemClock.sleep(100);
     }
 
     private void swipe(double fromX, double fromY, double toX, double toY) throws Exception {
@@ -331,6 +344,67 @@ public class PlayerControlsInstrumentationTest {
         await("v.paused && " + CONTROLS + ".dataset.hidden==='false'");
         assertTrue((Boolean) js("!!document.fullscreenElement"));
         screenshot("BiliSpeed-double-tap-fullscreen");
+    }
+
+    private void installContextMenuFixture(boolean insideHost) throws Exception {
+        js("var area=document.createElement('div');area.className='bpx-player-context-area';"
+                + "area.style.cssText='position:absolute;inset:0;z-index:1000;pointer-events:none';"
+                + "area.innerHTML='<ul class=\"bpx-player-contextmenu\"><li id=\"context-copy\">复制视频地址（精准空降）</li></ul>';"
+                + (insideHost ? "document.querySelector('" + HOST + "')" : "document.querySelector('.bpx-player-container')") + ".append(area);"
+                + "var style=document.createElement('style');style.textContent='.bpx-player-contextmenu{display:none;position:absolute;right:16px;top:16px;"
+                + "margin:0;padding:16px;list-style:none;background:#222;color:white;pointer-events:auto}'"
+                + "+'.bpx-player-contextmenu.bpx-player-active{display:block}.bpx-player-contextmenu li{padding:12px}';document.head.append(style);"
+                + "window.contextMenu=area.firstElementChild;window.contextOpen=false;window.contextActions=0;window.contextCloses=0;"
+                + "window.closeContext=function(){if(contextOpen){contextOpen=false;contextCloses++;contextMenu.classList.remove('bpx-player-active');}};"
+                + "document.querySelector('" + HOST + "').addEventListener('contextmenu',function(e){"
+                + "e.preventDefault();e.stopPropagation();contextOpen=true;contextMenu.classList.add('bpx-player-active');});"
+                + "window.addEventListener('click',function(e){if(!contextMenu.contains(e.target)&&e.button!==2&&contextOpen){closeContext();e.stopPropagation();}},true);"
+                + "contextMenu.addEventListener('mousedown',function(e){e.stopPropagation();if(e.button!==2){contextActions++;setTimeout(closeContext,100);}});true");
+    }
+
+    private void longPressPlayer() throws Exception {
+        float[] location = point(HOST, .25, .3);
+        input(MotionEvent.ACTION_DOWN, location);
+        SystemClock.sleep(750);
+        input(MotionEvent.ACTION_UP, location);
+        await("contextOpen && contextMenu.checkVisibility()");
+    }
+
+    @Test public void fullscreenLongPressMenuDismissesOnOneTapWithoutPlaybackOrControlActions() throws Exception {
+        tap("[data-bilispeed-control=fullscreen]");
+        await("document.fullscreenElement && innerWidth>innerHeight && " + CONTROLS + ".dataset.hidden==='true'");
+        dismissImmersiveHint(instrumentation);
+        installContextMenuFixture(false);
+        longPressPlayer();
+        tap(HOST);
+        await("!contextOpen && !contextMenu.checkVisibility()");
+        assertTrue((Boolean) js("v.paused && Math.abs(v.currentTime-1)<.15 && !!document.fullscreenElement"));
+        assertEquals("Dismissal must not toggle the playback controls", "true", js(CONTROLS + ".dataset.hidden"));
+
+        tap(HOST);
+        await(CONTROLS + ".dataset.hidden==='false'");
+        SystemClock.sleep(400);
+        longPressPlayer();
+        tap("[data-bilispeed-control=play]");
+        await("!contextOpen && !contextMenu.checkVisibility()");
+        assertTrue("Tapping a control first dismisses the menu", (Boolean) js("v.paused && !!document.fullscreenElement"));
+        assertEquals(2, ((Number) js("contextCloses")).intValue());
+        assertEquals(0, ((Number) js("contextActions")).intValue());
+        screenshot("BiliSpeed-fullscreen-context-menu-dismissed");
+    }
+
+    @Test public void contextMenuItemsInsidePlayerKeepTheirOfficialActionsAndCanReopen() throws Exception {
+        installContextMenuFixture(true);
+        longPressPlayer();
+        tap("#context-copy");
+        await("!contextOpen && contextActions===1");
+        assertTrue((Boolean) js("v.paused && Math.abs(v.currentTime-1)<.15"));
+        longPressPlayer();
+        shortTap(HOST, .1, .65);
+        await("!contextOpen && !contextMenu.checkVisibility()");
+        assertEquals(2, ((Number) js("contextCloses")).intValue());
+        assertEquals(1, ((Number) js("contextActions")).intValue());
+        assertTrue((Boolean) js("v.paused && Math.abs(v.currentTime-1)<.15"));
     }
 
     @Test public void largeSubtitleButtonKeepsFullscreenSettingsAndCaptionsInsidePlayer() throws Exception {

@@ -1,4 +1,19 @@
-# 2026-10-14 1.3.2 测试入口
+# 2026-10-19 1.3.3 测试入口
+
+本次修复长按后的官网菜单无法关闭，使用 Android 16 模拟器 `emulator-5580`。发布候选只改变版本和更新说明，播放器修复沿用上一轮 8 项菜单及手势验证；正式版本另跑 2 项菜单输入和 12 项升级校验：
+
+```powershell
+$menuUpdateTests = @(
+    'app.bilispeed.browser.PlayerControlsInstrumentationTest#fullscreenLongPressMenuDismissesOnOneTapWithoutPlaybackOrControlActions'
+    'app.bilispeed.browser.PlayerControlsInstrumentationTest#contextMenuItemsInsidePlayerKeepTheirOfficialActionsAndCanReopen'
+    'app.bilispeed.browser.UpdateInstrumentationTest'
+) -join ','
+.\scripts\build-apk.ps1 -AndroidSdk D:\dev\android-sdk -DeviceSerial emulator-5580 -TestFilter $menuUpdateTests -TestLogName emulator-1.3.3-release-regression.txt
+```
+
+发布后用 `PublishedUpdateSmokeTest#downloadsThePublishedReleaseAndVerifiesItsRealSignature` 检查应用内更新渠道，再运行 `scripts/verify-published-release.ps1` 核对公开附件、latest 更新信息及原签名。正式包须从已提交源码重新构建，并用 `scripts/compare-release-apks.ps1` 对照测试包。测试范围与结果见 [VALIDATION.md](VALIDATION.md)；下方保留历史测试入口。
+
+# 2026-10-14 1.3.2 测试入口（历史）
 
 连接手机的完整回归包含 127 项，保存 / 恢复原偏好、字体及旋转设置，保留 Cookies：
 

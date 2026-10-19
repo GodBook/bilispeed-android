@@ -1,5 +1,27 @@
 # Android 验收记录
 
+## 1.3.3：长按菜单单击关闭（发布候选）
+
+验收日期：2026-10-19（北京时间）。使用 `emulator-5580` / Android 16 API 36 / WebView 133.0.6943.137，当前没有连接实体手机。本次新增正式版本 1.3.3 / code18，保留远端已精简的 README，沿用原发布签名。
+
+发布候选菜单输入 2 项和升级校验 12 项 **14/14 通过**（82.842 秒），日志 `artifacts/emulator-1.3.3-release-regression.txt`。覆盖全屏单击画面 / 控件优先关闭菜单、菜单选项和重复打开，以及版本、签名、哈希、重定向、取消和安装文件隔离。关联的 6 项手势验证沿用下方初始修复记录；播放器代码未再次改变。未重跑整套回归或进行官网联测。
+
+测试包 SHA-256 `71F9C770FF943DC7D56002C1C815E8BF26F9ECE78783740C7FFC5A08D3D82EA4`，归档于 `artifacts/tested-1.3.3-final`。Release、lint（0 errors / 4 项既有 warnings）、JavaScript 语法和签名校验通过，签名证书 SHA-256 仍为 `e2d8ed51e71288c8f2a0ea81e3f7ac23aba499d59ed6d7eace205e78960f94b3`。测试后原偏好及临时系统设置已恢复。正式包将从本次源码提交重建，并与该测试包逐项比较。
+
+## 初始修复验证：长按菜单单击关闭（1.3.2 本地包，未发布）
+
+验收日期：2026-10-19（北京时间）。使用 `emulator-5580` / Android 16 API 36 / WebView 133.0.6943.137。当前未连接实体手机；本次使用真实 Android 输入及本地视频夹具，菜单按官网 4.10.5-cd952423 的事件方式模拟，未进行官网联测。版本保持 1.3.2 / code17。
+
+官网菜单打开时，自定义播放器不再消费下一次触摸，让 WebView 生成官网关闭菜单所需的点击事件。全屏长按后单击画面或控制按钮只关闭菜单，不改变播放、进度和全屏状态；菜单内选项与再次打开也已验证。
+
+- 新增菜单回归 **2/2**（65.195 秒）：`artifacts/emulator-context-menu-after.txt`。截图 `artifacts/emulator-context-menu-dismissed.png` 已目视确认菜单关闭、横屏与控制条正常。
+- 关联手势回归 **6/6**（186.917 秒）：`artifacts/emulator-context-menu-gesture-regression.txt`，覆盖竖屏单击与自动隐藏、竖屏和全屏双击、左右滑动、多指与取消、全屏显隐及面板保持。
+- Release 构建、JavaScript 语法及 APK v2 签名校验通过；lint 为 0 errors / 4 项既有 warnings。已核对 APK 内播放器脚本与源文件一致。测试后恢复原偏好与临时系统设置。
+
+本地安装包：`artifacts/BiliSpeed-1.3.2-tap-dismiss-Android16.apk`，2131684 字节，SHA-256 `6F7480301C7D21E2838663347C0D1276703F8D47878DE4FF1CE831DE86D55EEE`。本次没有重跑整套回归或发布 GitHub Release。
+
+初次诊断日志保留在 `artifacts/emulator-context-menu-before.txt`：菜单项无法激活，另有全屏准备阶段的测试点按延迟失败，均不计为通过。测试点按改用固定的短接触时间戳，避免解码导致测试线程延迟后将点按误识别成长按；最终上述 8 项使用更新后的同一测试夹具。
+
 ## 1.3.2：新图标与运行开销优化（已发布并回装公开正式包）
 
 验收日期：2026-10-14（北京时间）。使用 USB `1944b301` / 小米 9 SE / Android 15 API 35 / WebView 153.0.8010.36 / 1080×2340 / density 440。本次没有另行运行 Android 16 模拟器；APK 的 targetSdk 为 36，minSdk 为 26。
