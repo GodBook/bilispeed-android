@@ -22,7 +22,7 @@
     const pendingCommentHosts = new Map();
     let checkedCommentHosts = new WeakSet();
     let commentReadyTimer = null;
-    const ownElements = '#bilispeed-touch-controls, #bilispeed-seek-feedback, #bilispeed-video-tabs, #bilispeed-touch-style, #bilispeed-player-style, #bilispeed-episodes-style, #bilispeed-episodes, #bilispeed-folder-toggle, [data-bilispeed-image], [data-bilispeed-danmaku-header]';
+    const ownElements = '#bilispeed-touch-controls, #bilispeed-seek-feedback, #bilispeed-fullscreen-level, #bilispeed-fullscreen-gesture-style, #bilispeed-video-tabs, #bilispeed-touch-style, #bilispeed-player-style, #bilispeed-episodes-style, #bilispeed-episodes, #bilispeed-folder-toggle, [data-bilispeed-image], [data-bilispeed-danmaku-header]';
     const transientPlayerElements = '.bpx-player-dm-wrap, .bpx-player-dm-container, .bpx-player-subtitle-wrap';
     const observation = { childList: true, subtree: true, attributes: true, attributeFilter: ['content', 'data-server-rendered'] };
     const stylesheet = `

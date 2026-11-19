@@ -328,6 +328,7 @@
         if (message.theme && window.__BiliBrowserState) window.__BiliBrowserState.applyTheme(message.theme);
         if (typeof message.suspended === 'boolean') suspended = message.suspended;
         if (window.__BiliTouch) window.__BiliTouch.setSuspended(suspended);
+        window.__BiliFullscreenGestures?.setSuspended(suspended);
         if (message.buttons && window.__BiliTouchPlayer) window.__BiliTouchPlayer.setAppearance(message.buttons);
         if (suspended) stopHeartbeat(); else scheduleHeartbeat();
         return setRate(message.rate);
@@ -336,6 +337,7 @@
     function pause() {
         suspended = true;
         if (window.__BiliTouch) window.__BiliTouch.setSuspended(true);
+        window.__BiliFullscreenGestures?.setSuspended(true);
         stopHeartbeat();
         videos.forEach(video => { try { video.pause(); } catch (_) {} });
         sendToFrames({ type: 'pause' });
@@ -373,6 +375,7 @@
                 const message = JSON.parse(event.data);
                 if (message.type === 'config') configure(message);
                 if (message.type === 'pause') pause();
+                if (message.type === 'fullscreen-brightness') window.__BiliFullscreenGestures?.onBrightness(message);
             } catch (_) {}
         };
     }

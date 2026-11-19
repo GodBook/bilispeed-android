@@ -7,9 +7,9 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Test;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
@@ -50,10 +50,7 @@ public class DevicePreferencesProbe {
 
     @Test public void restorePreferences() throws Exception {
         assertTrue("Missing original preferences", snapshot().isFile());
-        JSONObject saved;
-        try (FileInputStream input = new FileInputStream(snapshot())) {
-            saved = new JSONObject(new String(input.readAllBytes(), StandardCharsets.UTF_8));
-        }
+        JSONObject saved = new JSONObject(new String(Files.readAllBytes(snapshot().toPath()), StandardCharsets.UTF_8));
         for (String name : new String[]{"playback", "updates"}) {
             SharedPreferences.Editor editor = context.getSharedPreferences(name, 0).edit().clear();
             JSONObject preferences = saved.getJSONObject(name);

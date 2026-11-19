@@ -5,6 +5,8 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.ActivityNotFoundException;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
@@ -20,6 +22,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Parcel;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -114,10 +117,18 @@ public class MainActivity extends Activity {
     private TextView errorText;
     private Dialog speedDialog;
     private Dialog appearanceDialog;
+    private AlertDialog clipboardDialog;
+    private boolean clipboardCheckPending;
+    private boolean skipClipboardOnResume;
+    private String lastClipboardUrl;
+    private long lastClipboardTimestamp;
     private View fullscreenView;
     private WebChromeClient.CustomViewCallback fullscreenCallback;
     private boolean episodeFullscreen;
     private String fullscreenEpisodeUrl;
+    private Float previousWindowBrightness;
+    private float gestureStartBrightness;
+    private int brightnessGestureId;
     private ValueCallback<Uri[]> uploadCallback;
     private ScriptHandler documentScript;
     private ScriptHandler documentBootstrapScript;
@@ -136,6 +147,7 @@ public class MainActivity extends Activity {
     private int previousOrientation;
     private long lastBlockedMessage;
     private final Runnable refreshTimeout = this::finishHomeRefresh;
+    private final Runnable checkClipboard = this::offerClipboardVideo;
 
     private static final class FrameState {
         JSONObject value;
@@ -186,7 +198,9 @@ public class MainActivity extends Activity {
         // player; the separate preference only controls its touch-friendly layout.
         touchLayout = preferences.getBoolean("touchLayout", true);
         injection = readAsset("speed-controller.js");
-        touchInjection = readAsset("browser-state.js") + "\n" + readAsset("desktop-touch.js") + "\n" + readAsset("video-details.js") + "\n" + readAsset("player-controls.js");
+        touchInjection = readAsset("browser-state.js") + "\n" + readAsset("desktop-touch.js") + "\n"
+                + readAsset("video-details.js") + "\n" + readAsset("player-controls.js") + "\n"
+                + readAsset("fullscreen-gestures.js");
         buildInterface();
         configureBrowser();
         updater = new AppUpdater(this);
@@ -198,6 +212,7 @@ public class MainActivity extends Activity {
         if (browserState == null) browserState = savedInstanceState;
         boolean restored = browserState != null && browser.restoreState(browserState) != null;
         String shared = sharedUrl(getIntent());
+        skipClipboardOnResume = shared != null;
         if (shared != null || !restored) {
             String previous = savedInstanceState == null ? null : savedInstanceState.getString("currentUrl");
             String start = shared != null ? shared : isHttps(previous) && previous.length() <= 8192 ? previous : HOME;
@@ -364,6 +379,17 @@ public class MainActivity extends Activity {
                     }
                     if ("position-updated".equals(data.optString("type"))) {
                         if (isMainFrame && data.optString("url").equals(browser.getUrl())) toast("列表内容已更新，已恢复到附近位置");
+                        return;
+                    }
+                    if ("fullscreen-brightness".equals(data.optString("type"))) {
+                        if (isMainFrame && foreground && hasWindowFocus() && isFullscreenActive()
+                                && isBiliHttps(browser.getUrl())) {
+                            int id = data.optInt("id", 0);
+                            int percent = adjustFullscreenBrightness(id, data.optBoolean("start"),
+                                    data.optDouble("delta", Double.NaN));
+                            if (percent >= 0) replyProxy.postMessage(new JSONObject().put("type", "fullscreen-brightness")
+                                    .put("id", id).put("percent", percent).toString());
+                        }
                         return;
                     }
                     if ("theme".equals(data.optString("type")) || "migrate-theme".equals(data.optString("type"))) {
@@ -1382,6 +1408,48 @@ public class MainActivity extends Activity {
         return resolveUrlInput(intent.getStringExtra(Intent.EXTRA_TEXT));
     }
 
+    private void offerClipboardVideo() {
+        // Android allows a clipboard read only after our own window receives focus.
+        if (!clipboardCheckPending || !foreground || destroyed || isFinishing() || !hasWindowFocus()) return;
+        clipboardCheckPending = false;
+        ClipboardManager clipboard = getSystemService(ClipboardManager.class);
+        ClipData clip;
+        try {
+            clip = clipboard == null ? null : clipboard.getPrimaryClip();
+        } catch (SecurityException exception) {
+            return;
+        }
+        ClipboardVideoLink link = null;
+        if (clip != null) {
+            for (int i = 0; i < clip.getItemCount() && link == null; i++) {
+                link = ClipboardVideoLink.find(clip.getItemAt(i).getText());
+            }
+        }
+        if (link == null) {
+            lastClipboardUrl = null;
+            return;
+        }
+        long timestamp = clip.getDescription().getTimestamp();
+        if (link.url.equals(lastClipboardUrl) && timestamp == lastClipboardTimestamp) return;
+        lastClipboardUrl = link.url;
+        lastClipboardTimestamp = timestamp;
+        ClipboardVideoLink current = ClipboardVideoLink.find(browser.getUrl());
+        if (current != null && link.url.equals(current.url)) return;
+
+        ClipboardVideoLink target = link;
+        String kind = target.shortLink ? "B 站短链接" : "B 站视频";
+        clipboardDialog = dialogBuilder().setTitle("打开" + kind + "？")
+                .setMessage("剪贴板中检测到链接：\n" + target.label)
+                .setNegativeButton("取消", null)
+                .setPositiveButton(target.shortLink ? "打开链接" : "打开视频", (dialog, which) -> {
+                    exitFullscreen();
+                    closeSettings();
+                    browser.loadUrl(target.url);
+                }).create();
+        clipboardDialog.setOnDismissListener(dialog -> clipboardDialog = null);
+        clipboardDialog.show();
+    }
+
     static String resolveUrlInput(String text) {
         if (text == null || text.length() > 16384) return null;
         String value = text.trim();
@@ -1441,6 +1509,34 @@ public class MainActivity extends Activity {
 
     private boolean isFullscreenActive() { return fullscreenView != null || episodeFullscreen; }
 
+    private int adjustFullscreenBrightness(int id, boolean start, double delta) {
+        if (id <= 0 || !Double.isFinite(delta) || Math.abs(delta) > 100) return -1;
+        Window window = getWindow();
+        WindowManager.LayoutParams attributes = window.getAttributes();
+        if (start) {
+            if (previousWindowBrightness == null) previousWindowBrightness = attributes.screenBrightness;
+            gestureStartBrightness = attributes.screenBrightness >= 0 ? attributes.screenBrightness
+                    : Settings.System.getInt(getContentResolver(), Settings.System.SCREEN_BRIGHTNESS, 128) / 255f;
+            brightnessGestureId = id;
+        }
+        if (brightnessGestureId != id) return -1;
+        float brightness = (float) Math.max(.02, Math.min(1, gestureStartBrightness + delta / 100));
+        if (attributes.screenBrightness != brightness) {
+            attributes.screenBrightness = brightness;
+            window.setAttributes(attributes);
+        }
+        return Math.round(brightness * 100);
+    }
+
+    private void restoreWindowBrightness() {
+        brightnessGestureId = 0;
+        if (previousWindowBrightness == null) return;
+        WindowManager.LayoutParams attributes = getWindow().getAttributes();
+        attributes.screenBrightness = previousWindowBrightness;
+        getWindow().setAttributes(attributes);
+        previousWindowBrightness = null;
+    }
+
     private void removeCustomFullscreenView() {
         if (fullscreenView != null) fullscreenHost.removeView(fullscreenView);
         fullscreenView = null;
@@ -1462,6 +1558,7 @@ public class MainActivity extends Activity {
         if (!isFullscreenActive()) return;
         episodeFullscreen = false;
         fullscreenEpisodeUrl = null;
+        restoreWindowBrightness();
         removeCustomFullscreenView();
         root.setBackgroundColor(colors.surface);
         updateBrowserLayout();
@@ -1478,6 +1575,7 @@ public class MainActivity extends Activity {
         if (!isBiliHttps(browser.getUrl())) return;
         browser.evaluateJavascript("window.__BILI_TOUCH_FULLSCREEN__=" + isFullscreenActive()
                 + ";window.__BiliTouchPlayer && window.__BiliTouchPlayer.setFullscreen("
+                + isFullscreenActive() + ");window.__BiliFullscreenGestures && window.__BiliFullscreenGestures.setFullscreen("
                 + isFullscreenActive() + ");", null);
     }
 
@@ -1539,7 +1637,12 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         String shared = sharedUrl(intent);
-        if (shared != null) browser.loadUrl(desktopUrl(shared));
+        if (shared != null) {
+            clipboardCheckPending = false;
+            skipClipboardOnResume = !foreground;
+            if (clipboardDialog != null) clipboardDialog.dismiss();
+            browser.loadUrl(desktopUrl(shared));
+        }
     }
     @Override protected void onResume() {
         super.onResume();
@@ -1555,10 +1658,20 @@ public class MainActivity extends Activity {
         handler.removeCallbacks(heartbeat);
         handler.post(heartbeat);
         if (updater != null) updater.onResume();
+        clipboardCheckPending = !skipClipboardOnResume;
+        skipClipboardOnResume = false;
+        handler.post(checkClipboard);
+    }
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && clipboardCheckPending) handler.post(checkClipboard);
     }
     @Override protected void onPause() {
         if (updater != null) updater.onPause();
         foreground = false;
+        clipboardCheckPending = false;
+        handler.removeCallbacks(checkClipboard);
+        brightnessGestureId = 0;
         updateHomeRefresh(browser == null ? null : browser.getUrl());
         handler.removeCallbacks(heartbeat);
         if (browser != null) {
@@ -1620,6 +1733,7 @@ public class MainActivity extends Activity {
     WebView browserForTesting() { return browser; }
     Dialog speedDialogForTesting() { return speedDialog; }
     Dialog appearanceDialogForTesting() { return appearanceDialog; }
+    AlertDialog clipboardDialogForTesting() { return clipboardDialog; }
     View settingsForTesting() { return settingsPanel; }
     boolean fullscreenForTesting() { return isFullscreenActive(); }
     View fullscreenViewForTesting() { return fullscreenView != null ? fullscreenView : episodeFullscreen ? browser : null; }

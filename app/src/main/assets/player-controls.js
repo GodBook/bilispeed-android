@@ -944,6 +944,7 @@ html[data-bilispeed-touch][data-bilispeed-fullscreen] #bilibili-player .bpx-play
     }
     Object.defineProperty(window, '__BiliTouchPlayer', { value: Object.freeze({ refresh,
         setSuspended, setAppearance,
+        cancelGesture() { cancelPreview(); scheduleHide(); },
         setFullscreen(value) { nativeFullscreen = !!value; update(); }
     }), configurable: false });
     window.addEventListener('pointerup', finishInteraction, true);

@@ -110,7 +110,7 @@ try {
             $sessionStarted = $true
             Start-DeviceSession
             $testClasses = if ($TestFilter) { $TestFilter } else {
-                'app.bilispeed.browser.PlaybackInstrumentationTest,app.bilispeed.browser.DesktopLayoutInstrumentationTest,app.bilispeed.browser.HomeRefreshInstrumentationTest,app.bilispeed.browser.VideoDetailsInstrumentationTest,app.bilispeed.browser.MyPageInstrumentationTest,app.bilispeed.browser.PlayerControlsInstrumentationTest,app.bilispeed.browser.UpdateInstrumentationTest,app.bilispeed.browser.BrowserRecoveryInstrumentationTest,app.bilispeed.browser.PhoneLayoutRegressionTest,app.bilispeed.browser.AccountPagesInstrumentationTest,app.bilispeed.browser.SettingsInstrumentationTest,app.bilispeed.browser.NavigationThemeInstrumentationTest'
+                'app.bilispeed.browser.PlaybackInstrumentationTest,app.bilispeed.browser.DesktopLayoutInstrumentationTest,app.bilispeed.browser.HomeRefreshInstrumentationTest,app.bilispeed.browser.VideoDetailsInstrumentationTest,app.bilispeed.browser.MyPageInstrumentationTest,app.bilispeed.browser.PlayerControlsInstrumentationTest,app.bilispeed.browser.UpdateInstrumentationTest,app.bilispeed.browser.BrowserRecoveryInstrumentationTest,app.bilispeed.browser.PhoneLayoutRegressionTest,app.bilispeed.browser.AccountPagesInstrumentationTest,app.bilispeed.browser.SettingsInstrumentationTest,app.bilispeed.browser.NavigationThemeInstrumentationTest,app.bilispeed.browser.ClipboardVideoInstrumentationTest'
             }
             if ($RunLiveCheck) { $testClasses += ',app.bilispeed.browser.OfficialBilibiliSmokeTest' }
             if ($RunUpdateCheck) { $testClasses += ',app.bilispeed.browser.PublishedUpdateSmokeTest' }

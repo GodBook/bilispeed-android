@@ -1,5 +1,15 @@
 # Android 验收记录
 
+## 1.3.4 全屏手势与剪贴板链接
+
+2026-11-19 在 Redmi K30 至尊纪念版（Android 12 API 31 / WebView 99.0.4844.88）验证签名候选包。测试全程保持移动数据开启，前后均核对 `mobile_data=1`。
+
+K30 专项回归 **10/10 通过**（64.140 秒），日志为 `artifacts/device-1.3.4-k30-regression-final.txt`。覆盖全屏左右侧上下滑、跨过中线时保持起手区域、音量滑条同步、静音与恢复、退出全屏后系统亮度恢复、电脑原版布局、竖屏保护、横滑进度、双击、长按菜单、全屏换集、剪贴板确认与取消以及重复提示保护。亮度和音量反馈截图见 `artifacts/device-1.3.4-k30-brightness.png` 与 `artifacts/device-1.3.4-k30-volume.png`。
+
+较早的运行记录保存在 `artifacts/device-1.3.4-k30-regression-a.txt`、`device-1.3.4-k30-regression-b.txt` 和 `device-1.3.4-k30-regression-c.txt`。测试流程适配了 Android 12 上的偏好快照恢复和 WebView 99 的本地夹具加载。MIUI 的自动亮度读数在窗口退出全屏后异步恢复，最终轮次等待两者先后完成。原偏好、旋转、休眠设置和测试时临时授予的 MIUI 应用权限均已恢复。
+
+候选 APK SHA-256 为 `58D446CFB20896610CDB7BBDBB23A5313797C23D614FFF25CB8868EDE42C35E1`，大小为 2138435 字节。构建、JavaScript 语法及原签名校验通过，lint 结果为 0 errors / 4 warnings。
+
 ## 1.3.3：长按菜单单击关闭（已发布并验证公开包）
 
 验收日期：2026-10-19（北京时间）。使用 `emulator-5580` / Android 16 API 36 / WebView 133.0.6943.137，当前没有连接实体手机。正式版本为 1.3.3 / code18，沿用原发布签名。
