@@ -10,6 +10,10 @@ K30 专项回归 **10/10 通过**（64.140 秒），日志为 `artifacts/device-
 
 候选 APK SHA-256 为 `58D446CFB20896610CDB7BBDBB23A5313797C23D614FFF25CB8868EDE42C35E1`，大小为 2138435 字节。构建、JavaScript 语法及原签名校验通过，lint 结果为 0 errors / 4 warnings。
 
+官网实播在移动数据下验证了进入全屏、左侧调暗、右侧音量升降及退出全屏。音量从 100% 降到 47%，随后提升到 92%，视频持续播放。实播记录见 `artifacts/device-1.3.4-k30-live-final.txt`，左侧调亮由上述真机专项覆盖。
+
+正式 APK 从发布标签 `v1.3.4` 对应提交 `1390e1069a08fe4589fea2971c5f1768c571b836` 构建。与候选包的 86 个 ZIP 条目逐项比较，唯一差异为 `META-INF/version-control-info.textproto`。公开下载的 APK、校验文件和 latest 更新清单均已核验，并将下载的正式 APK 覆盖安装到 K30。手机回拉的 APK 与公开文件具有相同 SHA-256 `1824C1BAFB862098AD450DD9B7BE9604389CA90DD0B1528CF23C1F7A6ECE8D31`。临时测试 runner 已卸载。公开校验证据见 `artifacts/device-1.3.4-public-verification.json`。[v1.3.4 发布页](https://github.com/GodBook/bilispeed-android/releases/tag/v1.3.4)
+
 ## 1.3.3：长按菜单单击关闭（已发布并验证公开包）
 
 验收日期：2026-10-19（北京时间）。使用 `emulator-5580` / Android 16 API 36 / WebView 133.0.6943.137，当前没有连接实体手机。正式版本为 1.3.3 / code18，沿用原发布签名。
